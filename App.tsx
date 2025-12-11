@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, ReactNode, ErrorInfo } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import PartnerDirectory from './components/PartnerDirectory';
@@ -8,7 +8,59 @@ import { Company } from './types';
 import { fetchCompanyById } from './services/bubbleService';
 import { Loader2, LogIn } from 'lucide-react';
 
-const App: React.FC = () => {
+interface ErrorBoundaryProps {
+  children?: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+// Error Boundary Component robusto (sem dependências externas que podem falhar)
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = {
+      hasError: false,
+      error: null
+    };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("App Crash:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '40px', fontFamily: 'sans-serif', textAlign: 'center', backgroundColor: '#f8fafc', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ fontSize: '48px', marginBottom: '20px' }}>⚠️</div>
+          <h1 style={{ color: '#1e293b', marginBottom: '10px' }}>Ops! Algo deu errado.</h1>
+          <p style={{ color: '#64748b', marginBottom: '20px' }}>
+            Ocorreu um erro ao carregar o aplicativo.
+          </p>
+          <div style={{ backgroundColor: '#fff', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0', color: '#ef4444', fontFamily: 'monospace', fontSize: '12px', maxWidth: '500px', overflow: 'auto', marginBottom: '20px', textAlign: 'left' }}>
+            {this.state.error?.message || "Erro desconhecido"}
+          </div>
+          <button 
+            onClick={() => window.location.reload()}
+            style={{ padding: '10px 20px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+          >
+            Tentar Novamente
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const AppContent: React.FC = () => {
   const [userIsPro, setUserIsPro] = useState(false);
   const [currentView, setCurrentView] = useState('dashboard');
   
@@ -20,28 +72,29 @@ const App: React.FC = () => {
     const initSession = async () => {
       setAuthLoading(true);
       
-      // 1. Tenta pegar o ID da URL (?uid=123)
-      const params = new URLSearchParams(window.location.search);
-      const uid = params.get('uid');
+      try {
+        // 1. Tenta pegar o ID da URL (?uid=123)
+        const params = new URLSearchParams(window.location.search);
+        const uid = params.get('uid');
 
-      if (uid) {
-        // Busca os dados da empresa no Bubble
-        const company = await fetchCompanyById(uid);
-        if (company) {
-          setCurrentUser(company);
-          // Opcional: Salvar no localStorage para persistir se o usuário der F5 sem o parametro
-          // localStorage.setItem('hub_user_id', company._id);
-        }
-      } 
-      
-      setAuthLoading(false);
+        if (uid) {
+          // Busca os dados da empresa no Bubble
+          const company = await fetchCompanyById(uid);
+          if (company) {
+            setCurrentUser(company);
+          }
+        } 
+      } catch (err) {
+        console.error("Erro na sessão:", err);
+      } finally {
+        setAuthLoading(false);
+      }
     };
 
     initSession();
   }, []);
 
   const handleLogin = () => {
-    // Em produção, isso redirecionaria para o seu app Bubble ou página de login
     alert("Para fazer login, acesse através do seu painel no Workly App.");
   };
 
@@ -56,7 +109,7 @@ const App: React.FC = () => {
     );
   }
 
-  // Se não estiver logado, mostra tela de bloqueio (ou redireciona)
+  // Se não estiver logado, mostra tela de bloqueio
   if (!currentUser) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-100 p-4">
@@ -107,6 +160,14 @@ const App: React.FC = () => {
     >
       {renderView()}
     </Layout>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
   );
 };
 

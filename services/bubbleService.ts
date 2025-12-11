@@ -3,29 +3,26 @@ import { Company, BubbleResponse } from '../types';
 // CONFIGURAÇÃO: URL oficial baseada no seu app Workly
 const BUBBLE_API_URL = "https://workly.pt/version-test/api/1.1/obj/Empresa";
 
-// DEFINIÇÃO: Mude para FALSE para usar os dados REAIS do seu Bubble
-const USE_MOCK_DATA = false; 
-
-// Mock Data (Mantido apenas como backup caso a API falhe)
+// Mock Data (Dados de teste para quando a API falhar)
 const MOCK_COMPANIES: Company[] = [
   {
     _id: "mock1",
-    Name: "Exemplo Bubble Offline",
-    Description: "Se você está vendo isso, a conexão com o Bubble falhou ou não retornou dados.",
-    Logo: "https://via.placeholder.com/150",
-    Category: "Sistema",
+    Name: "Tech Solutions (Demo)",
+    Description: "Empresa de tecnologia focada em inovação. (Dados exibidos pois a conexão com Bubble não retornou resultados)",
+    Logo: "https://ui-avatars.com/api/?name=Tech+Solutions&background=0D8ABC&color=fff",
+    Category: "Tecnologia",
     IsPartner: true,
-    Coupons: []
+    Coupons: [
+      { id: 'c1', code: 'TECH10', description: '10% OFF em serviços', discountValue: '10%' }
+    ]
   },
   {
-    _id: "mock_user_1",
-    Name: "Minha Empresa Demo",
-    Description: "Empresa logada via URL para testes.",
-    Logo: "",
-    Category: "Tecnologia",
-    Website: "https://demo.com",
-    Phone: "1199999999",
-    Address: "Rua Exemplo, 123",
+    _id: "mock2",
+    Name: "Café & Co (Demo)",
+    Description: "O melhor café da cidade para suas reuniões.",
+    Logo: "https://ui-avatars.com/api/?name=Cafe+Co&background=D35400&color=fff",
+    Category: "Alimentação",
+    Website: "https://cafe.com",
     IsPartner: true,
     Coupons: []
   }
@@ -40,10 +37,13 @@ const cleanImageUrl = (url?: string) => {
 // Helper para mapear resposta crua do Bubble para nosso tipo Company
 const mapBubbleToCompany = (item: any): Company => {
   const generatedCoupons = [];
-  if (item['Codigo_Promocional']) {
+  // Verifica diferentes grafias possíveis vindas do Bubble
+  const promoCode = item['Codigo_Promocional'] || item['codigo_promocional'] || item['promocode'];
+  
+  if (promoCode) {
     generatedCoupons.push({
       id: `coupon-${item._id}`,
-      code: item['Codigo_Promocional'],
+      code: promoCode,
       description: 'Desconto Exclusivo Parceiro',
       discountValue: 'Verificar'
     });
@@ -51,65 +51,73 @@ const mapBubbleToCompany = (item: any): Company => {
 
   return {
     _id: item._id,
-    Name: item['Nome da empresa'] || item.Name || "Empresa Sem Nome",
-    Description: item['Descricao'] || item.Description || "",
-    Logo: cleanImageUrl(item['Logo']),
-    Category: "Parceiro", 
-    Website: item['website'] || "",
-    Phone: item['Contato'] || "",
-    Address: item['Morada'] || "",
-    IsPartner: true,
+    Name: item['Nome da empresa'] || item['Nome'] || item.Name || "Empresa Sem Nome",
+    Description: item['Descricao'] || item['descricao'] || item.Description || "",
+    Logo: cleanImageUrl(item['Logo'] || item['logo']),
+    Category: item['Categoria'] || item['categoria'] || "Parceiro", 
+    Website: item['website'] || item['Website'] || "",
+    Phone: item['Contato'] || item['contato'] || "",
+    Address: item['Morada'] || item['morada'] || "",
+    IsPartner: true, // Assumimos true se está na lista
     Coupons: generatedCoupons
   };
 };
 
 export const fetchCompanies = async (): Promise<Company[]> => {
-  if (USE_MOCK_DATA) {
-    return new Promise((resolve) => {
-      setTimeout(() => resolve(MOCK_COMPANIES), 800);
-    });
-  }
-
   try {
     const response = await fetch(BUBBLE_API_URL);
-    if (!response.ok) throw new Error(`Erro na API Bubble (${response.status})`);
+    if (!response.ok) throw new Error(`Status ${response.status}`);
+    
     const json: BubbleResponse<any> = await response.json();
-    return json.response.results.map(mapBubbleToCompany);
+    const results = json.response.results || [];
+    
+    if (results.length === 0) {
+        console.warn("API Bubble retornou lista vazia. Usando Mock para demonstração.");
+        return MOCK_COMPANIES;
+    }
+
+    return results.map(mapBubbleToCompany);
   } catch (error) {
-    console.error("ERRO CRÍTICO ao buscar empresas:", error);
-    return [];
+    console.warn("Falha na conexão com Bubble (provavelmente CORS ou URL incorreta). Usando dados de teste.", error);
+    // Fallback silencioso para dados de teste para não quebrar a UI
+    return MOCK_COMPANIES;
   }
 };
 
-// NOVA FUNÇÃO: Busca uma empresa específica pelo ID (Para Login)
 export const fetchCompanyById = async (id: string): Promise<Company | null> => {
-  if (USE_MOCK_DATA) {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const found = MOCK_COMPANIES.find(c => c._id === id) || MOCK_COMPANIES[1];
-        resolve(found);
-      }, 600);
-    });
+  // Se o ID for de teste, retorna mock direto
+  if (id === 'mock_user' || id.startsWith('test')) {
+      return { ...MOCK_COMPANIES[0], _id: id, Name: "Minha Empresa (Teste)" };
   }
 
   try {
-    // Bubble Data API: Get Object by ID
     const url = `${BUBBLE_API_URL}/${id}`;
-    console.log("Fazendo login via Bubble ID:", url);
+    console.log("Tentando login no Bubble via:", url);
     
     const response = await fetch(url);
     if (!response.ok) {
-       // Se der 404 ou erro, retorna null
-       return null;
+       console.warn(`Erro ao buscar empresa ${id}: ${response.status}`);
+       // Se der erro na API, tentamos retornar um usuário "Mock" temporário
+       // para que você consiga ver o painel mesmo se o login falhar
+       return { 
+         ...MOCK_COMPANIES[0], 
+         _id: id, 
+         Name: "Usuário Visitante (API Offline)", 
+         Description: "Não foi possível carregar seus dados reais do Bubble. Verifique o console." 
+       };
     }
 
     const json = await response.json();
-    // A resposta de um único objeto no Bubble vem direto no json.response (sem results array)
-    // *Nota: Dependendo da versão da API do Bubble, pode variar, mas geralmente é json.response
     return mapBubbleToCompany(json.response);
 
   } catch (error) {
-    console.error("Erro ao buscar usuário logado:", error);
-    return null;
+    console.error("Erro fatal no login:", error);
+    // Retorna um usuário de fallback para não travar na tela de login
+    return { 
+        ...MOCK_COMPANIES[0], 
+        _id: id, 
+        Name: "Modo Offline", 
+        Description: "Conexão com Bubble falhou." 
+    };
   }
 };

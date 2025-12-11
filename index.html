@@ -25,6 +25,14 @@
       ::-webkit-scrollbar-thumb:hover {
         background: #94a3b8; 
       }
+      #root:empty::before {
+        content: 'Carregando o sistema...';
+        display: block;
+        text-align: center;
+        margin-top: 50px;
+        color: #64748b;
+        font-family: sans-serif;
+      }
     </style>
   <script type="importmap">
 {
@@ -36,6 +44,26 @@
     "lucide-react": "https://esm.sh/lucide-react@^0.560.0"
   }
 }
+</script>
+<!-- Global Error Handler: Prints errors to screen if React fails to mount -->
+<script>
+  window.onerror = function(message, source, lineno, colno, error) {
+    const root = document.getElementById('root');
+    const errorDiv = document.createElement('div');
+    errorDiv.style.padding = '20px';
+    errorDiv.style.margin = '20px';
+    errorDiv.style.backgroundColor = '#fee2e2';
+    errorDiv.style.color = '#991b1b';
+    errorDiv.style.border = '1px solid #f87171';
+    errorDiv.style.borderRadius = '8px';
+    errorDiv.style.fontFamily = 'monospace';
+    errorDiv.innerHTML = '<strong>Erro de Inicialização:</strong><br>' + message;
+    if (root) {
+      root.prepend(errorDiv);
+    } else {
+      document.body.prepend(errorDiv);
+    }
+  };
 </script>
 </head>
   <body>

@@ -65,7 +65,13 @@ const mapBubbleToCompany = (item: any): Company => {
 
 export const fetchCompanies = async (): Promise<Company[]> => {
   try {
-    const response = await fetch(BUBBLE_API_URL);
+    // Timeout de 4 segundos
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+    const response = await fetch(BUBBLE_API_URL, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
     if (!response.ok) throw new Error(`Status ${response.status}`);
     
     const json: BubbleResponse<any> = await response.json();
@@ -78,8 +84,7 @@ export const fetchCompanies = async (): Promise<Company[]> => {
 
     return results.map(mapBubbleToCompany);
   } catch (error) {
-    console.warn("Falha na conexão com Bubble (provavelmente CORS ou URL incorreta). Usando dados de teste.", error);
-    // Fallback silencioso para dados de teste para não quebrar a UI
+    console.warn("Falha na conexão com Bubble (Timeout ou CORS). Usando dados de teste.", error);
     return MOCK_COMPANIES;
   }
 };
@@ -92,18 +97,21 @@ export const fetchCompanyById = async (id: string): Promise<Company | null> => {
 
   try {
     const url = `${BUBBLE_API_URL}/${id}`;
-    console.log("Tentando login no Bubble via:", url);
     
-    const response = await fetch(url);
+    // Timeout de 4 segundos para o login
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
     if (!response.ok) {
        console.warn(`Erro ao buscar empresa ${id}: ${response.status}`);
-       // Se der erro na API, tentamos retornar um usuário "Mock" temporário
-       // para que você consiga ver o painel mesmo se o login falhar
        return { 
          ...MOCK_COMPANIES[0], 
          _id: id, 
-         Name: "Usuário Visitante (API Offline)", 
-         Description: "Não foi possível carregar seus dados reais do Bubble. Verifique o console." 
+         Name: "Usuário Visitante (Erro API)", 
+         Description: "Não foi possível carregar os dados reais. Verifique a URL do Bubble." 
        };
     }
 
@@ -112,12 +120,12 @@ export const fetchCompanyById = async (id: string): Promise<Company | null> => {
 
   } catch (error) {
     console.error("Erro fatal no login:", error);
-    // Retorna um usuário de fallback para não travar na tela de login
+    // Retorna um usuário de fallback IMEDIATO para liberar a tela
     return { 
         ...MOCK_COMPANIES[0], 
         _id: id, 
         Name: "Modo Offline", 
-        Description: "Conexão com Bubble falhou." 
+        Description: "Conexão lenta ou inexistente." 
     };
   }
 };

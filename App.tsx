@@ -1,4 +1,4 @@
-import React, { useState, useEffect, ReactNode, ErrorInfo } from 'react';
+import React, { useState, useEffect, ReactNode, ErrorInfo, Component } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import PartnerDirectory from './components/PartnerDirectory';
@@ -6,7 +6,7 @@ import MyCoupons from './components/MyCoupons';
 import Settings from './components/Settings';
 import { Company } from './types';
 import { fetchCompanyById } from './services/bubbleService';
-import { Loader2, LogIn } from 'lucide-react';
+import { Loader2, LogIn, AlertTriangle } from 'lucide-react';
 
 interface ErrorBoundaryProps {
   children?: ReactNode;
@@ -17,14 +17,15 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-// Error Boundary Component robusto (sem dependências externas que podem falhar)
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+// Error Boundary Component robusto
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  public state: ErrorBoundaryState = {
+    hasError: false,
+    error: null
+  };
+
   constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = {
-      hasError: false,
-      error: null
-    };
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -67,31 +68,50 @@ const AppContent: React.FC = () => {
   // Auth State
   const [currentUser, setCurrentUser] = useState<Company | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [loadingError, setLoadingError] = useState<string | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
+    
+    // Safety Timeout: Se a auth demorar mais que 6 segundos, força o fim
+    const safetyTimer = setTimeout(() => {
+      if (isMounted && authLoading) {
+        console.warn("Forçando fim do carregamento por timeout.");
+        setAuthLoading(false);
+        setLoadingError("O servidor demorou para responder. Verifique sua conexão.");
+      }
+    }, 6000);
+
     const initSession = async () => {
-      setAuthLoading(true);
-      
       try {
         // 1. Tenta pegar o ID da URL (?uid=123)
         const params = new URLSearchParams(window.location.search);
         const uid = params.get('uid');
 
         if (uid) {
-          // Busca os dados da empresa no Bubble
+          console.log("Iniciando login para:", uid);
           const company = await fetchCompanyById(uid);
-          if (company) {
-            setCurrentUser(company);
+          if (isMounted) {
+            if (company) {
+              setCurrentUser(company);
+            } else {
+              console.warn("Usuário não encontrado.");
+            }
           }
         } 
-      } catch (err) {
+      } catch (err: any) {
         console.error("Erro na sessão:", err);
+        if (isMounted) setLoadingError(err.message || "Erro desconhecido");
       } finally {
-        setAuthLoading(false);
+        if (isMounted) {
+          clearTimeout(safetyTimer);
+          setAuthLoading(false);
+        }
       }
     };
 
     initSession();
+    return () => { isMounted = false; clearTimeout(safetyTimer); };
   }, []);
 
   const handleLogin = () => {
@@ -100,11 +120,10 @@ const AppContent: React.FC = () => {
 
   if (authLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-50">
-        <div className="text-center">
-          <Loader2 className="w-10 h-10 text-blue-600 animate-spin mx-auto mb-4" />
-          <p className="text-slate-500 font-medium">Autenticando com Workly...</p>
-        </div>
+      <div className="flex h-screen items-center justify-center bg-slate-50 flex-col">
+        <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-4" />
+        <p className="text-slate-500 font-medium animate-pulse">Autenticando com Workly...</p>
+        <p className="text-xs text-slate-400 mt-2">Isso não deve demorar mais que alguns segundos.</p>
       </div>
     );
   }
@@ -121,14 +140,32 @@ const AppContent: React.FC = () => {
           <p className="text-slate-500 mb-6">
             Este hub é exclusivo para empresas parceiras. Por favor, acesse através do botão "Clube de Vantagens" dentro do seu aplicativo.
           </p>
+          
+          {loadingError && (
+             <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg flex items-center text-left">
+               <AlertTriangle className="w-4 h-4 mr-2 flex-shrink-0" />
+               <span>Erro: {loadingError}</span>
+             </div>
+          )}
+
           <button 
             onClick={handleLogin}
             className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition-colors"
           >
             Voltar para o App
           </button>
-          <div className="mt-6 text-xs text-slate-400">
-            Dica para teste: Adicione ?uid=SEU_ID_DO_BUBBLE ao final da URL.
+          
+          {/* Debug helper para facilitar testes */}
+          <div className="mt-8 pt-4 border-t border-slate-100">
+             <p className="text-xs text-slate-400 mb-2">Modo Desenvolvedor / Fallback</p>
+             <button 
+               onClick={() => {
+                 window.location.href = window.location.pathname + "?uid=mock_user";
+               }}
+               className="text-xs text-blue-500 hover:underline"
+             >
+               Entrar com Usuário de Teste (Mock)
+             </button>
           </div>
         </div>
       </div>

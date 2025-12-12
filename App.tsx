@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, ReactNode, ErrorInfo, Component } from 'react';
+import React, { useState, useEffect, ReactNode, ErrorInfo } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import PartnerDirectory from './components/PartnerDirectory';
@@ -19,15 +19,11 @@ interface ErrorBoundaryState {
 }
 
 // Fixed: Explicitly extend React.Component to resolve prop/state type errors
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = {
     hasError: false,
     error: null
   };
-
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-  }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };

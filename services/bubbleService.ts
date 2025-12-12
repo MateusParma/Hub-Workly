@@ -572,20 +572,26 @@ export const fetchClaimedCoupons = async (companyId: string): Promise<Coupon[]> 
 
 export const processQrCode = async (dataString: string, scannerOwnerId?: string): Promise<{valid: boolean, message: string, coupon?: Coupon}> => {
     try {
-        if (!scannerOwnerId) return { valid: false, message: "ID da sua empresa não identificado." };
+        if (!scannerOwnerId) return { valid: false, message: "ID da sua empresa não identificado. Recarregue a página." };
 
         let couponId = "";
         let clientId = "";
+        const cleanData = dataString.trim();
         
-        if (dataString.includes(":")) {
-            const parts = dataString.split(":");
+        if (cleanData.includes(":")) {
+            const parts = cleanData.split(":");
             couponId = parts[0];
             clientId = parts[1];
         } else {
-            return { valid: false, message: "QR Code inválido. Use o QR da Carteira Digital." };
+            // Retorna o que foi lido para debug do usuário
+            const preview = cleanData.length > 20 ? cleanData.substring(0, 20) + '...' : cleanData;
+            return { 
+                valid: false, 
+                message: `Formato inválido. Lido: "${preview}". O QR deve ser do app Workly (Cupom:Cliente).` 
+            };
         }
 
-        if (!couponId || !clientId) return { valid: false, message: "Dados do QR incompletos." };
+        if (!couponId || !clientId) return { valid: false, message: "Dados do QR incompletos ou corrompidos." };
 
         // 1. Busca Cupom
         const couponData = await fetchFromTableVariants(couponId, 'Cupom');
@@ -595,17 +601,21 @@ export const processQrCode = async (dataString: string, scannerOwnerId?: string)
 
         // 2. Valida Propriedade
         if (coupon.Dono !== scannerOwnerId) {
-             return { valid: false, message: "Este cupom pertence a outra empresa." };
+             return { valid: false, message: "Este cupom pertence a outra empresa. Você só pode validar seus próprios cupons." };
         }
 
-        if (coupon.status !== 'active') return { valid: false, message: "Cupom inativo ou pausado." };
+        if (coupon.status !== 'active') return { valid: false, message: "Este cupom está pausado ou expirado." };
 
         // 3. Registra Uso
-        await claimCoupon(couponId, clientId);
-
-        return { valid: true, message: `Sucesso! Cliente registrado.`, coupon };
+        const success = await claimCoupon(couponId, clientId);
+        
+        if (success) {
+            return { valid: true, message: `Sucesso! Uso registrado para o cliente.`, coupon };
+        } else {
+            return { valid: false, message: "Erro ao registrar o uso no banco de dados." };
+        }
 
     } catch (e) {
-        return { valid: false, message: "Erro de conexão ao validar." };
+        return { valid: false, message: "Erro de conexão ao validar o código." };
     }
 };

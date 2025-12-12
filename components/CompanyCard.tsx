@@ -1,8 +1,7 @@
 
 import React from 'react';
 import { Company } from '../types';
-import { Sparkles, Lock, ArrowRight, Ticket } from 'lucide-react';
-import { generateCompanyInsight } from '../services/geminiService';
+import { Lock, ArrowRight, Ticket, Tag } from 'lucide-react';
 
 interface CompanyCardProps {
   company: Company;
@@ -11,18 +10,8 @@ interface CompanyCardProps {
 }
 
 const CompanyCard: React.FC<CompanyCardProps> = ({ company, userIsPro, onOpenDetails }) => {
-  const [insight, setInsight] = React.useState<string>("");
-  const [isLoadingInsight, setIsLoadingInsight] = React.useState(false);
-
-  const handleGenerateInsight = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsLoadingInsight(true);
-    const text = await generateCompanyInsight(company.Name, company.Description);
-    setInsight(text);
-    setIsLoadingInsight(false);
-  };
-
-  const activeCouponsCount = company.Coupons?.filter(c => c.status !== 'paused').length || 0;
+  const activeCoupons = company.Coupons?.filter(c => c.status !== 'paused') || [];
+  const activeCouponsCount = activeCoupons.length;
 
   return (
     <div 
@@ -46,12 +35,6 @@ const CompanyCard: React.FC<CompanyCardProps> = ({ company, userIsPro, onOpenDet
                 Parceiro
             </span>
             )}
-            {activeCouponsCount > 0 && (
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700 shadow-sm border border-green-200 animate-pulse-slow">
-                    <Ticket className="w-3 h-3 mr-1" />
-                    {activeCouponsCount} {activeCouponsCount === 1 ? 'Oferta' : 'Ofertas'}
-                </span>
-            )}
         </div>
       </div>
 
@@ -64,32 +47,40 @@ const CompanyCard: React.FC<CompanyCardProps> = ({ company, userIsPro, onOpenDet
           </div>
         </div>
 
-        <p className="text-slate-600 text-sm mb-4 line-clamp-3 min-h-[60px]">
+        <p className="text-slate-600 text-sm mb-4 line-clamp-3 min-h-[40px]">
           {company.Description || "Sem descrição disponível."}
         </p>
 
-        {/* AI Insight Section */}
-        <div className="mb-4 min-h-[40px]" onClick={(e) => e.stopPropagation()}>
-          {!insight ? (
-            <button 
-              onClick={handleGenerateInsight}
-              disabled={isLoadingInsight}
-              className="flex items-center text-xs text-indigo-600 hover:text-indigo-800 font-medium transition-colors bg-indigo-50 px-2 py-1 rounded-md hover:bg-indigo-100"
-            >
-              <Sparkles className={`w-3 h-3 mr-1 ${isLoadingInsight ? 'animate-spin' : ''}`} />
-              {isLoadingInsight ? 'Analisando...' : 'Ver destaque IA'}
-            </button>
-          ) : (
-            <div className="bg-indigo-50 p-2 rounded-lg border border-indigo-100 animate-fadeIn">
-              <p className="text-xs text-indigo-800 italic">
-                <Sparkles className="w-3 h-3 inline-block mr-1 text-indigo-500" />
-                "{insight}"
-              </p>
-            </div>
-          )}
+        {/* Coupons Preview Section - Lógica Visual de Cupons */}
+        <div className="mb-4 min-h-[50px]">
+            {activeCouponsCount > 0 ? (
+                <div className="space-y-2">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center">
+                        <Ticket className="w-3 h-3 mr-1" />
+                        {activeCouponsCount} Ofertas Disponíveis
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                        {activeCoupons.slice(0, 2).map((coupon, idx) => (
+                            <span key={idx} className="inline-flex items-center px-2 py-1 rounded-md text-xs font-bold bg-green-50 text-green-700 border border-green-100 truncate max-w-[140px]">
+                                <Tag className="w-3 h-3 mr-1 flex-shrink-0" />
+                                {coupon.discountValue}
+                            </span>
+                        ))}
+                        {activeCouponsCount > 2 && (
+                            <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-slate-50 text-slate-500 border border-slate-100">
+                                +{activeCouponsCount - 2}
+                            </span>
+                        )}
+                    </div>
+                </div>
+            ) : (
+                <div className="flex items-center justify-center h-full opacity-50">
+                   <span className="text-xs text-slate-400 italic">Sem ofertas no momento</span>
+                </div>
+            )}
         </div>
 
-        {/* Coupon Action */}
+        {/* Action Button */}
         <div className="pt-4 border-t border-slate-100 mt-auto">
           {userIsPro ? (
               <button 

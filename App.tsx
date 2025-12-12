@@ -18,10 +18,13 @@ interface ErrorBoundaryState {
 }
 
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  public state: ErrorBoundaryState = {
-    hasError: false,
-    error: null
-  };
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = {
+      hasError: false,
+      error: null
+    };
+  }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
@@ -57,7 +60,9 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 }
 
 const AppContent: React.FC = () => {
-  const [userIsPro, setUserIsPro] = useState(false);
+  // HUB PRO: Sempre true, sem simulador.
+  const userIsPro = true;
+  
   const [currentView, setCurrentView] = useState('dashboard');
   const [currentUser, setCurrentUser] = useState<Company | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -70,7 +75,6 @@ const AppContent: React.FC = () => {
 
   const loadUser = async (uid: string) => {
     setAuthLoading(true);
-    // Limpa o UID de caracteres indesejados (aspas, espaços)
     const cleanUid = uid.replace(/['"\s]/g, '');
     addLog(`Buscando dados para ID: ${cleanUid}`);
     
@@ -116,7 +120,6 @@ const AppContent: React.FC = () => {
 
   const handleManualLogin = () => {
     if (manualUid) {
-      // Atualiza a URL sem recarregar para facilitar share
       const newUrl = `${window.location.pathname}?uid=${manualUid}`;
       window.history.pushState({ path: newUrl }, '', newUrl);
       loadUser(manualUid);
@@ -202,8 +205,6 @@ const AppContent: React.FC = () => {
 
   return (
     <Layout 
-      userIsPro={userIsPro} 
-      onTogglePro={() => setUserIsPro(!userIsPro)}
       currentView={currentView}
       onChangeView={setCurrentView}
       currentUser={currentUser}

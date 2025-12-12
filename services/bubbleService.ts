@@ -48,12 +48,14 @@ const mapBubbleToCoupon = (item: any): Coupon => {
 };
 
 // Mapeia os dados usando um dicionário opcional de categorias
-const mapBubbleToCompany = (item: any, categoryMap: Record<string, string> = {}): Company => {
+const mapBubbleToCompany = (item: any, categoryMap: Record<string, string> = {}, extraCoupons: Coupon[] = []): Company => {
   if (!item) return MOCK_COMPANIES[0];
 
   let generatedCoupons: Coupon[] = [];
-  const listKey = item['Lista_cupons'] ? 'Lista_cupons' : 'Lista_Cupons';
   
+  // ESTRATÉGIA HÍBRIDA:
+  // 1. Tenta pegar da lista aninhada (se o Bubble enviou)
+  const listKey = item['Lista_cupons'] ? 'Lista_cupons' : 'Lista_Cupons';
   if (Array.isArray(item[listKey])) {
       generatedCoupons = item[listKey].map((c: any) => {
           if (typeof c === 'object') return mapBubbleToCoupon(c);
@@ -61,33 +63,38 @@ const mapBubbleToCompany = (item: any, categoryMap: Record<string, string> = {})
       }).filter((c): c is Coupon => c !== null);
   }
 
-  // Lógica Aprimorada de Categoria (Setor de Atuação)
-  let category = "Parceiro";
-  
-  // 1. Tenta pegar do campo 'Setor de Atuação' (que geralmente é uma lista de IDs)
-  const rawSetor = item['Setor de Atuação'] || item['Setor'] || item['Categoria'];
-  
-  if (rawSetor) {
-      if (Array.isArray(rawSetor)) {
-          // Se for array, tenta mapear cada ID para o nome usando categoryMap
-          const names = rawSetor.map(id => categoryMap[id] || id);
-          // Filtra IDs que não foram resolvidos (ainda parecem IDs do Bubble)
-          const cleanNames = names.filter(n => typeof n === 'string' && (!n.includes('x') || n.length < 20));
-          
-          if (cleanNames.length > 0) {
-              category = cleanNames.join(', ');
-          }
-      } else if (typeof rawSetor === 'string') {
-          // Se for string única
-          if (categoryMap[rawSetor]) {
-              category = categoryMap[rawSetor];
-          } else if (!rawSetor.includes('x') || rawSetor.length < 20) {
-              category = rawSetor;
+  // 2. Fallback: Se a lista acima estiver vazia ou só tiver IDs (string),
+  // tentamos casar com os cupons buscados separadamente pelo 'Dono' ou pelo ID na lista.
+  if (generatedCoupons.length === 0 && extraCoupons.length > 0) {
+      // Filtra cupons onde 'Dono' é o ID desta empresa
+      const ownedCoupons = extraCoupons.filter(c => c.Dono === item._id);
+      
+      if (ownedCoupons.length > 0) {
+          generatedCoupons = ownedCoupons;
+      } else if (Array.isArray(item[listKey])) {
+          // Se não tem Dono, tenta bater o ID da lista de strings com o ID do cupom
+          const idsList = item[listKey];
+          if (idsList.length > 0 && typeof idsList[0] === 'string') {
+               generatedCoupons = extraCoupons.filter(c => idsList.includes(c.id));
           }
       }
   }
 
-  // 2. Fallback: Se ainda parecer um ID ou for genérico, tenta outros campos de texto
+  // Lógica Aprimorada de Categoria
+  let category = "Parceiro";
+  const rawSetor = item['Setor de Atuação'] || item['Setor'] || item['Categoria'];
+  
+  if (rawSetor) {
+      if (Array.isArray(rawSetor)) {
+          const names = rawSetor.map(id => categoryMap[id] || id);
+          const cleanNames = names.filter(n => typeof n === 'string' && (!n.includes('x') || n.length < 20));
+          if (cleanNames.length > 0) category = cleanNames.join(', ');
+      } else if (typeof rawSetor === 'string') {
+          if (categoryMap[rawSetor]) category = categoryMap[rawSetor];
+          else if (!rawSetor.includes('x') || rawSetor.length < 20) category = rawSetor;
+      }
+  }
+
   if (category === "Parceiro" || (category.includes('x') && category.length > 20)) {
      const textCandidates = [item['Categoria_Texto'], item['Setor_Texto'], item['Especialidade_Principal']];
      const validText = textCandidates.find(c => c && typeof c === 'string' && c.length < 30 && !c.includes('x'));
@@ -144,15 +151,12 @@ const fetchWithFallback = async (targetUrl: string, signal?: AbortSignal, method
 const fetchCategoriesMap = async (): Promise<Record<string, string>> => {
     const map: Record<string, string> = {};
     try {
-        // Tenta buscar na tabela 'Categoria' ou 'Categorias'
         let url = `${BUBBLE_API_ROOT}/Categoria`;
         let result = await fetchWithFallback(url);
-        
         if (!result || !result.response) {
             url = `${BUBBLE_API_ROOT}/Categorias`;
             result = await fetchWithFallback(url);
         }
-
         if (result && result.response && result.response.results) {
             result.response.results.forEach((cat: any) => {
                 const name = cat['Titulo'] || cat['Name'] || cat['Nome'];
@@ -217,7 +221,7 @@ export const fetchCompanyById = async (id: string): Promise<Company | null> => {
 
   if (companyData) {
       companyData = await enrichCoupons(companyData, controller.signal);
-      const categoryMap = await fetchCategoriesMap(); // Resolve categoria para o user logado tbm
+      const categoryMap = await fetchCategoriesMap(); 
       clearTimeout(timeoutId);
       return mapBubbleToCompany(companyData, categoryMap);
   }
@@ -226,6 +230,7 @@ export const fetchCompanyById = async (id: string): Promise<Company | null> => {
   return null;
 };
 
+// FUNÇÃO REESCRITA PARA FALLBACK E PERFORMANCE
 export const fetchCompanies = async (): Promise<Company[]> => {
   const controller = new AbortController();
   try {
@@ -238,12 +243,23 @@ export const fetchCompanies = async (): Promise<Company[]> => {
          json = await fetchWithFallback(url, controller.signal);
       }
 
-      // 2. Busca Categorias em paralelo para resolver IDs
-      const categoryMap = await fetchCategoriesMap();
+      // 2. Busca Categorias em paralelo
+      const categoryMapPromise = fetchCategoriesMap();
+      
+      // 3. Busca TODOS os cupons em paralelo (Fallback robusto)
+      const allCouponsPromise = fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom?t=${Date.now()}`, controller.signal);
+
+      const [categoryMap, allCouponsJson] = await Promise.all([categoryMapPromise, allCouponsPromise]);
+
+      // Processa lista de todos os cupons disponíveis
+      let allCoupons: Coupon[] = [];
+      if (allCouponsJson && allCouponsJson.response && allCouponsJson.response.results) {
+          allCoupons = allCouponsJson.response.results.map((c: any) => mapBubbleToCoupon(c));
+      }
 
       if (json && json.response && json.response.results) {
-          // Passa o mapa para a função de mapeamento
-          return json.response.results.map((item: any) => mapBubbleToCompany(item, categoryMap));
+          // Passa a lista completa de cupons para o mapper fazer o "join" em memória
+          return json.response.results.map((item: any) => mapBubbleToCompany(item, categoryMap, allCoupons));
       }
   } catch (error) {
       console.warn("Erro ao listar empresas", error);
@@ -393,11 +409,10 @@ export const claimCoupon = async (couponId: string, companyId: string, currentUs
 };
 
 // Busca todos os cupons onde o companyId está na lista Utilizadores
+// ATUALIZADO: Com fallback Client-Side se a constraint de API falhar
 export const fetchClaimedCoupons = async (companyId: string): Promise<Coupon[]> => {
     try {
-        // Busca todos os cupons (Constraints no Bubble Data API podem ser complexas de configurar sem saber se "Use field as list" está marcado, então faremos filtro no client-side para segurança, dado volume baixo inicial)
-        // O ideal seria: constraints=[{"key":"Utilizadores","constraint_type":"contains","value":"ID"}]
-        
+        // Tenta filtrar via API
         const constraints = [
             { key: "Utilizadores", constraint_type: "contains", value: companyId }
         ];
@@ -405,13 +420,24 @@ export const fetchClaimedCoupons = async (companyId: string): Promise<Coupon[]> 
         const url = `${BUBBLE_API_ROOT}/Cupom?constraints=${JSON.stringify(constraints)}`;
         const result = await fetchWithFallback(url);
 
-        if (result && result.response && result.response.results) {
-            const coupons: Coupon[] = result.response.results.map((c: any) => mapBubbleToCoupon(c));
-            
-            // Tenta enriquecer com dados do Dono (Empresa que deu o desconto) para mostrar logo/nome na carteira
-            // Buscamos todas as empresas para fazer um lookup rápido (cacheado pelo navegador se já foi carregado em outra tela)
+        let coupons: Coupon[] = [];
+
+        if (result && result.response && result.response.results && result.response.results.length > 0) {
+            coupons = result.response.results.map((c: any) => mapBubbleToCoupon(c));
+        } else {
+            // FALLBACK: Se API retornou vazio (talvez por permissão de busca), busca TUDO e filtra aqui
+            // Isso garante que se o dado existe, o usuário vê.
+            const allUrl = `${BUBBLE_API_ROOT}/Cupom`;
+            const allResult = await fetchWithFallback(allUrl);
+            if (allResult && allResult.response && allResult.response.results) {
+                const allMapped = allResult.response.results.map((c: any) => mapBubbleToCoupon(c));
+                coupons = allMapped.filter(c => c.utilizadores && c.utilizadores.includes(companyId));
+            }
+        }
+
+        // Tenta enriquecer com dados do Dono
+        if (coupons.length > 0) {
             const allCompanies = await fetchCompanies();
-            
             return coupons.map(c => {
                 const owner = allCompanies.find(comp => comp._id === c.Dono);
                 if (owner) {

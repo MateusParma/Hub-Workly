@@ -1,18 +1,17 @@
+
 import React, { useState } from 'react';
 import { LayoutDashboard, Users, Ticket, Settings, Menu, X, Crown, LogOut, Terminal, Activity } from 'lucide-react';
 import { Company } from '../types';
 
 interface LayoutProps {
   children: React.ReactNode;
-  userIsPro: boolean;
-  onTogglePro: () => void;
   currentView: string;
   onChangeView: (view: string) => void;
   currentUser: Company;
   debugLogs?: string[]; // Propriedade opcional para logs
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, userIsPro, onTogglePro, currentView, onChangeView, currentUser, debugLogs = [] }) => {
+const Layout: React.FC<LayoutProps> = ({ children, currentView, onChangeView, currentUser, debugLogs = [] }) => {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
   const [isDebugOpen, setIsDebugOpen] = useState(false);
 
@@ -76,23 +75,8 @@ const Layout: React.FC<LayoutProps> = ({ children, userIsPro, onTogglePro, curre
             <NavItem icon={Settings} label="Minha Conta" viewId="settings" />
           </nav>
 
-          {/* User Profile & Simulator */}
+          {/* User Profile */}
           <div className="p-4 bg-slate-50 border-t border-slate-100">
-             <div className="p-3 bg-white rounded-lg border border-slate-200 shadow-sm mb-4">
-              <p className="text-xs text-slate-500 mb-2 font-medium">Simulador de Status</p>
-              <div className="flex items-center justify-between">
-                <span className={`text-sm font-medium ${userIsPro ? 'text-blue-600' : 'text-slate-600'}`}>
-                  {userIsPro ? 'PRO' : 'Free'}
-                </span>
-                <button 
-                  onClick={onTogglePro}
-                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${userIsPro ? 'bg-blue-600' : 'bg-slate-300'}`}
-                >
-                  <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition ${userIsPro ? 'translate-x-5' : 'translate-x-1'}`} />
-                </button>
-              </div>
-            </div>
-
             <button 
               onClick={() => window.location.href = window.location.pathname} // Logout simples (limpa query params)
               className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -116,15 +100,9 @@ const Layout: React.FC<LayoutProps> = ({ children, userIsPro, onTogglePro, curre
           </button>
 
           <div className="flex items-center space-x-4 ml-auto">
-            {userIsPro ? (
-               <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-sm animate-pulse-slow">
+             <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-sm">
                  <Crown className="w-3 h-3 mr-1" /> Membro PRO
-               </span>
-            ) : (
-              <button onClick={onTogglePro} className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
-                Plano Gratuito (Fazer Upgrade)
-              </button>
-            )}
+             </span>
             <div className="flex items-center space-x-2 border-l border-slate-200 pl-4">
               <div className="text-right hidden sm:block">
                 <p className="text-sm font-medium text-slate-900">{currentUser.Name}</p>

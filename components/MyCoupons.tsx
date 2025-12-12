@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Ticket, Plus, Trash2, Edit, Loader2, Save, X, AlertCircle, ShoppingBag, Store, QrCode, ArrowRight, Share2 } from 'lucide-react';
+import { Ticket, Plus, Trash2, Edit, Loader2, Save, X, AlertCircle, ShoppingBag, Store, QrCode, ArrowRight, Download } from 'lucide-react';
 import { Company, Coupon } from '../types';
 import { fetchCompanyById, createCoupon, updateCoupon, deleteCoupon, fetchClaimedCoupons } from '../services/bubbleService'; 
 
@@ -104,6 +104,119 @@ const MyCoupons: React.FC = () => {
     } finally {
         setSaving(false);
     }
+  };
+
+  // --- DOWNLOAD TICKET LOGIC ---
+  const handleDownloadTicket = async (coupon: Coupon) => {
+    if (!currentUser) return;
+    
+    // Create a temporary canvas
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Dimensions
+    const width = 800;
+    const height = 400;
+    canvas.width = width;
+    canvas.height = height;
+
+    // Background Gradient (Cinema Style Dark)
+    const gradient = ctx.createLinearGradient(0, 0, width, height);
+    gradient.addColorStop(0, '#1e293b'); // slate-800
+    gradient.addColorStop(1, '#0f172a'); // slate-900
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+
+    // Dashed Line Split (Ticket Stub)
+    const stubX = 550;
+    ctx.beginPath();
+    ctx.setLineDash([15, 10]);
+    ctx.moveTo(stubX, 0);
+    ctx.lineTo(stubX, height);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#475569';
+    ctx.stroke();
+
+    // Semi-circles (cutouts)
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(stubX, 0, 20, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(stubX, height, 20, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+
+    // Text Styles
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 30px Inter, sans-serif';
+    ctx.fillText(coupon.ownerData?.name || 'Parceiro Workly', 40, 60);
+
+    ctx.fillStyle = '#60a5fa'; // Blue-400
+    ctx.font = 'bold 16px Inter, sans-serif';
+    ctx.fillText('CUPOM EXCLUSIVO', 40, 90);
+
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = 'bold 60px Inter, sans-serif';
+    ctx.fillText(coupon.discountValue, 40, 180);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '20px Inter, sans-serif';
+    // Wrap description text
+    const words = coupon.description.split(' ');
+    let line = '';
+    let y = 230;
+    for(let n = 0; n < words.length; n++) {
+        const testLine = line + words[n] + ' ';
+        const metrics = ctx.measureText(testLine);
+        if (metrics.width > 450 && n > 0) {
+            ctx.fillText(line, 40, y);
+            line = words[n] + ' ';
+            y += 30;
+        } else {
+            line = testLine;
+        }
+    }
+    ctx.fillText(line, 40, y);
+
+    // Code Box
+    ctx.fillStyle = '#334155';
+    ctx.fillRect(40, height - 80, 200, 50);
+    ctx.strokeStyle = '#475569';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([]);
+    ctx.strokeRect(40, height - 80, 200, 50);
+    
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 24px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(coupon.code, 140, height - 48);
+
+    // QR CODE Logic
+    const qrData = `${coupon.id}:${currentUser._id}`;
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=0&data=${encodeURIComponent(qrData)}`;
+    
+    // Load QR Image
+    const qrImg = new Image();
+    qrImg.crossOrigin = "Anonymous";
+    qrImg.src = qrUrl;
+    qrImg.onload = () => {
+        // Draw QR on Stub
+        ctx.drawImage(qrImg, stubX + 45, 80, 160, 160);
+        
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '12px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Apresente este QR', stubX + 125, 260);
+        ctx.fillText('para validar', stubX + 125, 275);
+
+        // Download Action
+        const link = document.createElement('a');
+        link.download = `Ticket_${coupon.code}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    };
   };
 
   return (
@@ -255,18 +368,26 @@ const MyCoupons: React.FC = () => {
                                         </p>
                                     </div>
 
-                                    <div className="mt-auto pt-4 border-t border-slate-100 flex items-center justify-between">
+                                    <div className="mt-auto pt-4 border-t border-slate-100 flex items-center justify-between gap-2">
                                         <div className="flex flex-col">
                                             <span className="text-[10px] text-slate-400 uppercase font-bold">Código</span>
                                             <span className="font-mono font-bold text-slate-700">{coupon.code}</span>
                                         </div>
-                                        <button 
-                                            onClick={() => setSelectedQrCoupon(coupon)}
-                                            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition-colors shadow-md shadow-blue-200"
-                                        >
-                                            <QrCode className="w-4 h-4 mr-2" />
-                                            Usar
-                                        </button>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => handleDownloadTicket(coupon)}
+                                                className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors"
+                                                title="Baixar Ticket"
+                                            >
+                                                <Download className="w-4 h-4" />
+                                            </button>
+                                            <button 
+                                                onClick={() => setSelectedQrCoupon(coupon)}
+                                                className="flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition-colors shadow-md shadow-blue-200"
+                                            >
+                                                <QrCode className="w-4 h-4" />
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -329,6 +450,14 @@ const MyCoupons: React.FC = () => {
                             <span className="font-mono font-bold text-slate-800 text-lg">{selectedQrCoupon.code}</span>
                         </div>
                     </div>
+                    
+                    <button 
+                        onClick={() => handleDownloadTicket(selectedQrCoupon)}
+                        className="mt-6 w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm shadow-lg hover:bg-slate-800 transition-colors flex items-center justify-center"
+                    >
+                        <Download className="w-4 h-4 mr-2" />
+                        Baixar Ticket
+                    </button>
                 </div>
                 
                 <div className="bg-slate-50 p-4 text-center border-t border-slate-100">

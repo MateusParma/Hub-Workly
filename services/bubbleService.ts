@@ -577,15 +577,16 @@ export const fetchClaimedCoupons = async (companyId: string): Promise<Coupon[]> 
     return [];
 };
 
-export const processQrCode = async (dataString: string): Promise<{valid: boolean, message: string, coupon?: Coupon}> => {
+export const processQrCode = async (dataString: string, scannerId?: string): Promise<{valid: boolean, message: string, coupon?: Coupon}> => {
     try {
         let couponId = "";
-        let empresaId = "";
+        let clienteId = "";
 
+        // Formato esperado: "COUPON_ID:CLIENTE_ID"
         if (dataString.includes(":")) {
             const parts = dataString.split(":");
             couponId = parts[0];
-            empresaId = parts[1];
+            clienteId = parts[1];
         } else {
             couponId = dataString;
         }
@@ -599,13 +600,40 @@ export const processQrCode = async (dataString: string): Promise<{valid: boolean
 
         if (coupon.status !== 'active') return { valid: false, message: "Cupom inativo." };
 
-        if (empresaId) {
-            if (!coupon.utilizadores?.includes(empresaId)) {
-                return { valid: false, message: "Este cliente não resgatou este cupom no app." };
+        // Verifica se o Dono da Loja é quem está escaneando (Segurança básica)
+        if (scannerId && coupon.Dono) {
+            if (coupon.Dono !== scannerId) {
+                 return { valid: false, message: "Este cupom não pertence à sua empresa." };
             }
         }
 
-        return { valid: true, message: `Desconto de ${coupon.discountValue} autorizado!`, coupon };
+        // LÓGICA DE VALIDAÇÃO DO USO
+        // Se houver ID do cliente no QR, verificamos/registramos o uso
+        if (clienteId) {
+             // 1. Verifica se o cliente realmente resgatou
+             // Obs: O cliente é adicionado em 'Utilizadores' quando ele clica em 'Pegar Cupom'.
+             // Mas aqui o dono da loja está validando.
+             
+             // Opcional: Adicionar à lista se não estiver (Garante que o uso foi contabilizado)
+             // Requisito: "adicionar a empresa no campo utilizadores na tabela cupom"
+             
+             let currentUtilizadores: string[] = coupon.utilizadores || [];
+             if (!currentUtilizadores.includes(clienteId)) {
+                 const newUtilizadores = [...currentUtilizadores, clienteId];
+                 const payload = { 
+                     Utilizadores: newUtilizadores, 
+                     Users: newUtilizadores,
+                     usos_atuais: newUtilizadores.length,
+                     Current_Uses: newUtilizadores.length
+                 };
+                 await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom/${couponId}`, undefined, 'PATCH', payload);
+             }
+             
+             return { valid: true, message: `Cupom VÁLIDO! Cliente ID: ...${clienteId.slice(-4)}`, coupon };
+        } else {
+             // Se for apenas o código do cupom sem ID de cliente
+             return { valid: true, message: `Cupom VÁLIDO! Desconto: ${coupon.discountValue}`, coupon };
+        }
 
     } catch (e) {
         return { valid: false, message: "Erro de leitura." };

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { LayoutDashboard, Users, Ticket, Settings, Menu, X, Crown, LogOut, Terminal, Activity, Camera } from 'lucide-react';
+import { LayoutDashboard, Users, Ticket, Settings, Menu, X, Crown, LogOut, Terminal, Activity, Camera, ScanLine } from 'lucide-react';
 import { Company } from '../types';
 import QRScannerModal from './QRScannerModal';
 
@@ -17,12 +17,13 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, onChangeView, cu
   const [isDebugOpen, setIsDebugOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
 
-  const NavItem = ({ icon: Icon, label, viewId }: { icon: any, label: string, viewId: string }) => {
+  const NavItem = ({ icon: Icon, label, viewId, onClick }: { icon: any, label: string, viewId?: string, onClick?: () => void }) => {
     const active = currentView === viewId;
     return (
       <button
         onClick={() => {
-          onChangeView(viewId);
+          if (onClick) onClick();
+          else if (viewId) onChangeView(viewId);
           setIsSidebarOpen(false);
         }}
         className={`flex items-center w-full px-4 py-3 mb-1 rounded-lg transition-colors ${
@@ -71,6 +72,13 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, onChangeView, cu
             <NavItem icon={Users} label="Empresas Parceiras" viewId="partners" />
             <NavItem icon={Ticket} label="Meus Cupons" viewId="coupons" />
             
+            <div className="my-2"></div>
+            <NavItem 
+                icon={ScanLine} 
+                label="Escanear Código" 
+                onClick={() => setIsScannerOpen(true)}
+            />
+            
             <div className="my-6 border-t border-slate-100"></div>
             
             <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4 px-4">Configurações</div>
@@ -80,7 +88,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, onChangeView, cu
           {/* User Profile */}
           <div className="p-4 bg-slate-50 border-t border-slate-100">
             <button 
-              onClick={() => window.location.href = window.location.pathname} // Logout simples (limpa query params)
+              onClick={() => window.location.href = window.location.pathname} // Logout simples
               className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
             >
               <LogOut className="w-4 h-4 mr-2" />
@@ -100,15 +108,6 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, onChangeView, cu
                 className="lg:hidden text-slate-500 hover:text-slate-700 mr-4"
               >
                 <Menu className="w-6 h-6" />
-             </button>
-             
-             {/* SCANNER BUTTON - MOBILE/DESKTOP */}
-             <button
-               onClick={() => setIsScannerOpen(true)}
-               className="flex items-center bg-slate-900 text-white px-3 py-2 rounded-lg hover:bg-slate-800 transition-colors shadow-sm"
-             >
-                <Camera className="w-4 h-4 mr-2" />
-                <span className="text-sm font-bold">Scanner</span>
              </button>
           </div>
 
@@ -177,7 +176,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, onChangeView, cu
       </div>
 
       {/* SCANNER MODAL */}
-      <QRScannerModal isOpen={isScannerOpen} onClose={() => setIsScannerOpen(false)} />
+      <QRScannerModal isOpen={isScannerOpen} onClose={() => setIsScannerOpen(false)} currentUser={currentUser} />
     </div>
   );
 };

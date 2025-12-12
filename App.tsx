@@ -1,4 +1,4 @@
-import React, { Component, useState, useEffect, ReactNode, ErrorInfo } from 'react';
+import React, { useState, useEffect, ReactNode, ErrorInfo } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import PartnerDirectory from './components/PartnerDirectory';
@@ -18,7 +18,7 @@ interface ErrorBoundaryState {
 }
 
 // Fixed: Use Component directly to ensure props are correctly typed and recognized
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = {
     hasError: false,
     error: null

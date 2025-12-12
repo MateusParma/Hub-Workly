@@ -100,7 +100,8 @@ const MyCoupons: React.FC = () => {
         setShowCreateModal(false);
         await loadData();
     } catch (err: any) {
-        setErrorMsg(err.message || "Erro ao salvar.");
+        // Exibe a mensagem exata retornada pelo Bubble (Fallback)
+        setErrorMsg(err.message || "Erro desconhecido ao salvar. Verifique o console.");
     } finally {
         setSaving(false);
     }
@@ -293,7 +294,7 @@ const MyCoupons: React.FC = () => {
                       <td className="px-6 py-4 text-sm text-slate-600">
                         <span className="inline-flex items-center px-2 py-1 rounded bg-blue-50 text-blue-700 font-bold text-xs">
                            <ShoppingBag className="w-3 h-3 mr-1" />
-                           {coupon.utilizadores?.length || 0}
+                           {coupon.uses || 0}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-center">
@@ -483,7 +484,7 @@ const MyCoupons: React.FC = () => {
             
             <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
               {errorMsg && (
-                  <div className="bg-red-50 text-red-700 p-3 rounded text-sm flex items-center">
+                  <div className="bg-red-50 text-red-700 p-3 rounded text-sm flex items-center animate-pulse">
                       <AlertCircle className="w-4 h-4 mr-2" />
                       {errorMsg}
                   </div>

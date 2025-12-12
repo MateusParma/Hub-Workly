@@ -4,25 +4,29 @@ export enum UserTier {
 }
 
 export interface Coupon {
-  id: string;
+  id: string; // Bubble _id
   code: string;
   description: string;
   discountValue: string;
   expiryDate?: string;
+  maxUses?: number;
+  uses?: number;
+  status?: 'active' | 'expired' | 'paused';
 }
 
-// Mirrors the typical Bubble.io 'User' or 'Company' data type structure
+// Representa a Tabela 'Empresa' do Bubble
 export interface Company {
-  _id: string; // Bubble Data API uses _id
+  _id: string; // ID único da tabela Empresa (não do User)
   Name: string;
   Description: string;
-  Logo?: string; // URL
+  Logo?: string; 
   Category: string;
   Website?: string;
   Phone?: string;
   Address?: string;
+  Email?: string; // Pode vir do User vinculado ou da empresa se tiver campo
   IsPartner: boolean;
-  Coupons?: Coupon[]; // List of coupons (could be a list of texts or related objects in Bubble)
+  Coupons?: Coupon[]; // Lista de cupons da tabela Empresa
 }
 
 export interface BubbleResponse<T> {

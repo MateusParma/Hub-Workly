@@ -1,4 +1,4 @@
-import React, { useState, useEffect, ReactNode, ErrorInfo } from 'react';
+import React, { useState, useEffect, ReactNode, ErrorInfo, Component } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import PartnerDirectory from './components/PartnerDirectory';
@@ -6,7 +6,7 @@ import MyCoupons from './components/MyCoupons';
 import Settings from './components/Settings';
 import { Company } from './types';
 import { fetchCompanyById } from './services/bubbleService';
-import { Loader2, LogIn, AlertTriangle, Terminal, Search } from 'lucide-react';
+import { Loader2, LogIn, Search } from 'lucide-react';
 
 interface ErrorBoundaryProps {
   children?: ReactNode;
@@ -17,14 +17,11 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = {
-      hasError: false,
-      error: null
-    };
-  }
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  public state: ErrorBoundaryState = {
+    hasError: false,
+    error: null
+  };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };

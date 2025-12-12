@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Save, User, Lock, CreditCard, Building, Mail, Globe, MapPin, Loader2, ExternalLink } from 'lucide-react';
+import { Save, User, Lock, CreditCard, Building, Mail, Globe, MapPin, Loader2, ExternalLink, AlertCircle } from 'lucide-react';
 import { Company } from '../types';
+import { updateCompany } from '../services/bubbleService';
 
 interface SettingsProps {
   currentUser: Company;
@@ -8,11 +9,13 @@ interface SettingsProps {
 
 const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
   const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
   
   // Initialize form with current user data
+  // Mapeando corretamente os campos que vêm do bubbleService
   const [formData, setFormData] = useState({
     companyName: currentUser.Name,
-    email: 'email@exemplo.com', 
+    email: (currentUser as any).Email || '', // Cast for extra field
     phone: currentUser.Phone || '',
     website: currentUser.Website || '',
     address: currentUser.Address || '',
@@ -23,7 +26,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
   useEffect(() => {
     setFormData({
       companyName: currentUser.Name,
-      email: 'email@exemplo.com', 
+      email: (currentUser as any).Email || '',
       phone: currentUser.Phone || '',
       website: currentUser.Website || '',
       address: currentUser.Address || '',
@@ -33,15 +36,33 @@ const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
 
   const handleChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+    if (message) setMessage(null);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setLoading(true);
-    // Simulação de chamada de API para salvar no Bubble
-    setTimeout(() => {
+    setMessage(null);
+
+    try {
+      const success = await updateCompany(currentUser._id, {
+        Name: formData.companyName,
+        Phone: formData.phone,
+        Website: formData.website,
+        Address: formData.address,
+        Description: formData.description
+      });
+
+      if (success) {
+        setMessage({ type: 'success', text: 'Dados atualizados com sucesso no Bubble!' });
+      } else {
+        throw new Error("Falha desconhecida.");
+      }
+    } catch (error: any) {
+      console.error(error);
+      setMessage({ type: 'error', text: 'Erro ao salvar: ' + (error.message || 'Verifique sua conexão.') });
+    } finally {
       setLoading(false);
-      alert("Configurações salvas com sucesso! (Em produção, isso atualizaria o registro no Bubble)");
-    }, 1500);
+    }
   };
 
   const handleOpenWorkly = () => {
@@ -54,6 +75,13 @@ const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
         <h1 className="text-2xl font-bold text-slate-900">Configurações da Conta</h1>
         <p className="text-slate-500">Gerencie as informações da sua empresa e sua assinatura.</p>
       </div>
+
+      {message && (
+        <div className={`p-4 rounded-lg flex items-center ${message.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+          <AlertCircle className="w-5 h-5 mr-2" />
+          {message.text}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
@@ -139,12 +167,13 @@ const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
                     value={formData.website}
                     onChange={(e) => handleChange('website', e.target.value)}
                     className="w-full border border-slate-300 rounded-lg pl-10 pr-3 py-2.5 focus:ring-2 focus:ring-blue-500"
+                    placeholder="https://..."
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Endereço Completo</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Endereço (Morada)</label>
                 <div className="relative">
                   <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
                   <input 
@@ -186,7 +215,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
                       className="w-full border border-slate-200 bg-slate-50 rounded-lg pl-10 pr-3 py-2.5 text-slate-500 cursor-not-allowed"
                     />
                   </div>
-                  <p className="text-xs text-slate-400 mt-1">Gerenciado pelo app principal.</p>
+                  <p className="text-xs text-slate-400 mt-1">Gerenciado pelo app principal (Somente leitura).</p>
                </div>
             </div>
           </div>

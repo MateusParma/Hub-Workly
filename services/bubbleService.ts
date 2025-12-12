@@ -27,7 +27,7 @@ const cleanImageUrl = (url?: string) => {
 };
 
 const mapBubbleToCoupon = (item: any): Coupon => {
-    // Normaliza a lista de utilizadores (pode vir null, undefined ou array)
+    // Normaliza a lista de utilizadores (List of Empresas)
     let utilizadoresList: string[] = [];
     if (Array.isArray(item['Utilizadores'])) {
         utilizadoresList = item['Utilizadores'];
@@ -74,7 +74,7 @@ const mapBubbleToCompany = (item: any, categoryMap: Record<string, string> = {},
       }
   }
 
-  // Mapear Carteira de Cupons (Resgatados)
+  // Mapear Carteira de Cupons (Resgatados) - Campo na tabela Empresa
   let carteiraList: string[] = [];
   if (Array.isArray(item['carteira_cupons'])) {
       carteiraList = item['carteira_cupons'];
@@ -347,35 +347,32 @@ export const deleteCoupon = async (couponId: string): Promise<boolean> => {
 
 // --- LOGICA REFINADA DE RESGATE E CARTEIRA ---
 
-// 1. Resgatar Cupom (Vincula Coupon->User e User->Coupon)
+// 1. Resgatar Cupom (Vincula Coupon->Empresa e Empresa->Coupon)
 export const claimCoupon = async (couponId: string, companyId: string, currentUtilizadores: string[]): Promise<boolean> => {
     // Verificação de segurança
     if (currentUtilizadores.includes(companyId)) return true;
 
     try {
-        // Passo 1: Atualizar o Cupom (Adicionar user na lista Utilizadores)
+        // Passo 1: Atualizar o Cupom (Adicionar empresa na lista Utilizadores)
+        // No Bubble, se 'Utilizadores' é List of Empresas, precisamos passar o ID da Empresa.
         const newUtilizadoresList = [...currentUtilizadores, companyId];
         await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom/${couponId}`, undefined, 'PATCH', {
             Utilizadores: newUtilizadoresList,
             usos_atuais: newUtilizadoresList.length
         });
 
-        // Passo 2: Atualizar o Usuário (Adicionar cupom na lista carteira_cupons)
+        // Passo 2: Atualizar a Empresa (Adicionar cupom na lista carteira_cupons)
         const user = await fetchCompanyById(companyId);
         if (user) {
             const currentWallet = user.carteira_cupons || [];
-            // Evita duplicata na lista do usuario
+            // Evita duplicata na lista da empresa
             if (!currentWallet.includes(couponId)) {
                 const newWalletList = [...currentWallet, couponId];
                 
-                // Tenta atualizar tanto a tabela Empresa quanto User para garantir (depende de onde o ID veio)
-                // Se o ID é de User, atualiza User. Se é Empresa, Empresa.
-                // Como fetchCompanyById abstrai isso, vamos tentar adivinhar ou fazer os dois se falhar.
-                
-                // Primeiro tenta como Empresa (mais provável no Hub Empresarial)
+                // Prioridade: Atualizar tabela Empresa
                 let success = await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${companyId}`, undefined, 'PATCH', { "carteira_cupons": newWalletList });
                 
-                // Se falhar ou retornar null, tenta User
+                // Fallback para User somente se falhar e se o ID for compatível (mas o foco é Empresa)
                 if (!success || success.statusCode >= 400) {
                      await fetchWithFallback(`${BUBBLE_API_ROOT}/User/${companyId}`, undefined, 'PATCH', { "carteira_cupons": newWalletList });
                 }
@@ -388,12 +385,12 @@ export const claimCoupon = async (couponId: string, companyId: string, currentUt
     }
 };
 
-// 2. Busca a Carteira (Prioriza a lista no perfil do usuário para performance)
+// 2. Busca a Carteira (Prioriza a lista no perfil da empresa para performance)
 export const fetchClaimedCoupons = async (companyId: string): Promise<Coupon[]> => {
     try {
         let couponIds: string[] = [];
 
-        // Busca dados frescos do usuário para pegar a lista de IDs
+        // Busca dados frescos da empresa para pegar a lista de IDs
         const user = await fetchCompanyById(companyId);
         if (user && user.carteira_cupons && user.carteira_cupons.length > 0) {
             couponIds = user.carteira_cupons;
@@ -436,14 +433,14 @@ export const fetchClaimedCoupons = async (companyId: string): Promise<Coupon[]> 
 // 3. Validar QR Code (Simulação de validação no caixa)
 export const processQrCode = async (dataString: string): Promise<{valid: boolean, message: string, coupon?: Coupon}> => {
     try {
-        // Esperado formato: "COUPON_ID:USER_ID" ou JSON
+        // Esperado formato: "COUPON_ID:EMPRESA_ID"
         let couponId = "";
-        let userId = "";
+        let empresaId = "";
 
         if (dataString.includes(":")) {
             const parts = dataString.split(":");
             couponId = parts[0];
-            userId = parts[1];
+            empresaId = parts[1];
         } else {
             // Tenta achar apenas ID do cupom
             couponId = dataString;
@@ -459,14 +456,14 @@ export const processQrCode = async (dataString: string): Promise<{valid: boolean
 
         if (coupon.status !== 'active') return { valid: false, message: "Este cupom está inativo ou expirado." };
 
-        // Se tiver ID do usuário no QR, verifica se ele realmente resgatou
-        if (userId) {
-            if (!coupon.utilizadores?.includes(userId)) {
-                return { valid: false, message: "Este usuário não resgatou este cupom oficialmente." };
+        // Verifica se a empresa está na lista de Utilizadores (List of Empresas)
+        if (empresaId) {
+            if (!coupon.utilizadores?.includes(empresaId)) {
+                return { valid: false, message: "Esta empresa não resgatou este cupom oficialmente no Hub." };
             }
         }
 
-        return { valid: true, message: "Cupom Válido! Pode aplicar o desconto.", coupon };
+        return { valid: true, message: "Cupom Válido! Pode aplicar o desconto para o parceiro.", coupon };
 
     } catch (e) {
         return { valid: false, message: "Erro ao processar código." };

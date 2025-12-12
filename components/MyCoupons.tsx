@@ -253,8 +253,8 @@ const MyCoupons: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {walletCoupons.length > 0 ? (
                         walletCoupons.map((coupon) => (
-                            <div key={coupon.id} className="bg-white border border-green-200 rounded-xl p-5 shadow-sm relative overflow-hidden flex flex-col">
-                                <div className="absolute top-0 right-0 w-16 h-16 bg-green-50 rounded-bl-full -mr-8 -mt-8 z-0"></div>
+                            <div key={coupon.id} className="bg-white border border-green-200 rounded-xl p-5 shadow-sm relative overflow-hidden flex flex-col group hover:shadow-lg transition-shadow">
+                                <div className="absolute top-0 right-0 w-16 h-16 bg-green-50 rounded-bl-full -mr-8 -mt-8 z-0 transition-transform group-hover:scale-110"></div>
                                 
                                 <div className="relative z-10 flex-1">
                                     <div className="flex items-center mb-4">
@@ -273,16 +273,23 @@ const MyCoupons: React.FC = () => {
                                         </div>
                                     </div>
                                     
-                                    <div className="text-center py-2">
-                                        <div className="text-2xl font-bold text-green-700">{coupon.discountValue}</div>
-                                        <p className="text-sm text-slate-600">{coupon.description}</p>
+                                    <div className="text-center py-2 border-y border-dashed border-slate-200 my-2">
+                                        <div className="text-3xl font-bold text-green-700">{coupon.discountValue}</div>
+                                        <p className="text-sm text-slate-600 line-clamp-2 mt-1">{coupon.description}</p>
+                                    </div>
+                                    
+                                    <div className="flex justify-between items-center mt-2">
+                                        <div className="bg-slate-100 px-2 py-1 rounded text-xs font-mono text-slate-600 tracking-widest">
+                                            {coupon.code}
+                                        </div>
+                                        {coupon.status === 'paused' && <span className="text-xs text-red-500 font-bold">Expirado</span>}
                                     </div>
                                 </div>
 
-                                <div className="mt-4 pt-4 border-t border-slate-100">
+                                <div className="mt-4 pt-4">
                                     <button 
                                         onClick={() => setSelectedQrCoupon(coupon)}
-                                        className="w-full flex items-center justify-center px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors shadow-sm font-bold text-sm"
+                                        className="w-full flex items-center justify-center px-4 py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors shadow-sm font-bold text-sm"
                                     >
                                         <QrCode className="w-4 h-4 mr-2" />
                                         Usar no Caixa
@@ -305,28 +312,39 @@ const MyCoupons: React.FC = () => {
       {/* QR CODE DISPLAY MODAL */}
       {selectedQrCoupon && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-            <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center relative shadow-2xl">
+            <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center relative shadow-2xl transform transition-all">
                 <button 
                     onClick={() => setSelectedQrCoupon(null)}
-                    className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
+                    className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 bg-slate-100 rounded-full p-1"
                 >
                     <X className="w-6 h-6" />
                 </button>
                 
-                <h3 className="text-xl font-bold text-slate-900 mb-1">{selectedQrCoupon.ownerData?.name || "Oferta"}</h3>
-                <p className="text-green-600 font-bold mb-6">{selectedQrCoupon.discountValue} - {selectedQrCoupon.code}</p>
+                <div className="mb-4">
+                     <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Cupom de Desconto</p>
+                     <h3 className="text-xl font-bold text-slate-900 mt-1">{selectedQrCoupon.ownerData?.name || "Oferta"}</h3>
+                </div>
+
+                <div className="bg-slate-50 p-4 rounded-xl border-2 border-dashed border-slate-200 mb-6">
+                    <p className="text-green-600 font-bold text-3xl mb-1">{selectedQrCoupon.discountValue}</p>
+                    <p className="font-mono text-slate-500 tracking-wider text-sm">{selectedQrCoupon.code}</p>
+                </div>
                 
-                <div className="bg-white p-4 rounded-xl border-2 border-slate-900 inline-block mb-6">
-                    {/* QR Code gerado por API para evitar peso de lib extra, combinando ID do cupom e ID do usuario para validação */}
+                <div className="bg-white p-2 rounded-xl border-2 border-slate-900 inline-block mb-6 shadow-xl">
+                    {/* 
+                       Gera QR Code usando API Externa. 
+                       Dados: ID_CUPOM : ID_USUARIO
+                       Isso permite que o scanner valide a posse.
+                    */}
                     <img 
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${selectedQrCoupon.id}:${currentUser?._id}`}
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&margin=10&data=${selectedQrCoupon.id}:${currentUser?._id}`}
                         alt="QR Code" 
                         className="w-48 h-48"
                     />
                 </div>
                 
-                <p className="text-sm text-slate-500 px-4">
-                    Apresente este código ao parceiro para validar seu desconto.
+                <p className="text-sm text-slate-600 px-4 leading-relaxed">
+                    Mostre este código ao lojista para validar e aplicar seu desconto na hora da compra.
                 </p>
             </div>
         </div>

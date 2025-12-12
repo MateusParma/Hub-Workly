@@ -50,8 +50,6 @@ const mapBubbleToCompany = (item: any): Company => {
   
   let generatedCoupons: Coupon[] = [];
   
-  // 1. Tenta ler a Lista_Cupons (Prioridade)
-  // O Bubble pode retornar Case Sensitive, tentamos variantes
   const listKey = item['Lista_cupons'] ? 'Lista_cupons' : 'Lista_Cupons';
   
   if (Array.isArray(item[listKey])) {
@@ -61,7 +59,7 @@ const mapBubbleToCompany = (item: any): Company => {
       }).filter((c): c is Coupon => c !== null);
   }
 
-  // Tratamento da Categoria (Pode vir como Lista de textos ou Texto único)
+  // Tratamento da Categoria
   let category = "Parceiro";
   const rawCategory = item['Setor de Atuação'] || item['Categoria'] || item['categoria'];
   if (rawCategory) {
@@ -72,34 +70,25 @@ const mapBubbleToCompany = (item: any): Company => {
       }
   }
 
-  // Mapeamento EXATO baseado nas suas imagens do Bubble Editor
+  // Tenta extrair o EMAIL de forma robusta
+  const rawEmail = 
+      item['email'] || 
+      item['Email'] || 
+      item['authentication']?.email || 
+      item['Email_Candidatos'] || 
+      "";
+
+  // Mapeamento EXATO baseado nas imagens do Bubble Editor
   return {
     _id: item._id,
-    
-    // Campo: Nome da empresa (text)
     Name: item['Nome da empresa'] || item['Nome'] || item['name'] || "Empresa Sem Nome",
-    
-    // Campo: Descricao (text)
     Description: item['Descricao'] || item['descricao'] || "",
-    
-    // Campo: Logo (image) - aplica cleaner para adicionar https:
     Logo: cleanImageUrl(item['Logo'] || item['logo'] || item['Logo_Capa']),
-    
-    // Campo: Setor de Atuação (list of text/categories)
     Category: category, 
-    
-    // Campo: website (text) - nota minúscula na imagem
     Website: item['website'] || item['Website'] || item['Site'] || "",
-    
-    // Campo: Contato (text)
     Phone: item['Contato'] || item['contato'] || item['Telefone'] || "",
-    
-    // Campo: Morada (text)
     Address: item['Morada'] || item['morada'] || item['Endereco'] || "",
-    
-    // @ts-ignore - Email geralmente fica no User, mas tentamos pegar se existir na empresa
-    Email: item['email'] || item['Email'] || item['Email_Candidatos'] || "", 
-    
+    Email: rawEmail,
     IsPartner: true, 
     Coupons: generatedCoupons
   };
@@ -193,10 +182,8 @@ export const fetchCompanyById = async (id: string): Promise<Company | null> => {
               companyData = userObj; 
           }
       } else {
-          // Se o ID passado já for da Empresa, o endpoint User pode retornar erro ou vazio, ou o proprio dado se for unificado
-          // Se falhou user ou não tem empresa vinculada, tentamos buscar direto na tabela Empresa com esse ID
+          // Se falhou user ou não tem empresa vinculada, tentamos buscar direto na tabela Empresa
           if (!userObj['authentication']) {
-             // Provavelmente é um ID de empresa que retornou algo genérico
              const directCompany = await fetchFromTableVariants(id, 'Empresa', controller.signal);
              companyData = directCompany || userObj;
           } else {
@@ -231,7 +218,6 @@ export const fetchCompanies = async (): Promise<Company[]> => {
       let url = `${BUBBLE_API_ROOT}/Empresa?t=${Date.now()}`;
       let json = await fetchWithFallback(url, controller.signal);
       
-      // Fallback para User se Empresa estiver vazia
       if (!json || !json.response || json.response.results.length === 0) {
          url = `${BUBBLE_API_ROOT}/User?t=${Date.now()}`;
          json = await fetchWithFallback(url, controller.signal);
@@ -251,14 +237,16 @@ export const updateCompany = async (id: string, data: Partial<Company>): Promise
 
   const payload: any = {};
   
-  // Mapeamento Inverso: React -> Bubble (Deve bater com o banco)
   if (data.Name) payload['Nome da empresa'] = data.Name;
   if (data.Phone) payload['Contato'] = data.Phone;
   if (data.Website) payload['website'] = data.Website;
-  if (data.Address) payload['Morada'] = data.Address; // Capitalized 'Morada' baseado na imagem 2
+  if (data.Address) payload['Morada'] = data.Address; 
   if (data.Description) payload['Descricao'] = data.Description;
   
-  // Campo de Logo
+  // Campo de Logo:
+  // Se for Base64 (data:image...), tentamos enviar.
+  // Nota: O Bubble Data API para campos 'image' normalmente espera uma URL (S3).
+  // Porém, algumas configurações aceitam conteúdo encoded. Se falhar, o ideal é usar um plugin de upload.
   if (data.Logo) payload['Logo'] = data.Logo;
 
   console.log("Enviando Update para Empresa:", id, payload);

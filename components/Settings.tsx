@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Save, User, Lock, CreditCard, Building, Mail, Globe, MapPin, Loader2, ExternalLink, AlertCircle, Image as ImageIcon } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Save, User, Lock, CreditCard, Building, Mail, Globe, MapPin, Loader2, ExternalLink, AlertCircle, Upload, Camera } from 'lucide-react';
 import { Company } from '../types';
 import { updateCompany } from '../services/bubbleService';
 
@@ -10,12 +10,11 @@ interface SettingsProps {
 const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Initialize form with current user data
-  // Mapeando corretamente os campos que vêm do bubbleService
   const [formData, setFormData] = useState({
     companyName: currentUser.Name,
-    email: (currentUser as any).Email || '', // Cast for extra field
+    email: (currentUser as any).Email || '', 
     phone: currentUser.Phone || '',
     website: currentUser.Website || '',
     address: currentUser.Address || '',
@@ -23,7 +22,6 @@ const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
     logo: currentUser.Logo || ''
   });
 
-  // Update form if user changes
   useEffect(() => {
     setFormData({
       companyName: currentUser.Name,
@@ -41,6 +39,25 @@ const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
     if (message) setMessage(null);
   };
 
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      // Validação simples de tamanho (ex: 2MB)
+      if (file.size > 2 * 1024 * 1024) {
+        setMessage({ type: 'error', text: 'A imagem é muito grande. Escolha uma imagem de até 2MB.' });
+        return;
+      }
+
+      // Converte para Base64 para preview e envio
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = reader.result as string;
+        setFormData(prev => ({ ...prev, logo: result }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSave = async () => {
     setLoading(true);
     setMessage(null);
@@ -52,12 +69,11 @@ const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
         Website: formData.website,
         Address: formData.address,
         Description: formData.description,
-        Logo: formData.logo
+        Logo: formData.logo // Envia a URL ou o Base64
       });
 
       if (success) {
         setMessage({ type: 'success', text: 'Dados atualizados! Recarregando página...' });
-        // Recarrega a página para atualizar o Header e Sidebar com o novo Nome/Logo
         setTimeout(() => {
           window.location.reload();
         }, 1500);
@@ -66,7 +82,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
       }
     } catch (error: any) {
       console.error(error);
-      setMessage({ type: 'error', text: 'Erro ao salvar: ' + (error.message || 'Verifique se a tabela Empresa permite "Modify via API" nas Privacy Rules.') });
+      setMessage({ type: 'error', text: 'Erro ao salvar: ' + (error.message || 'Verifique as regras de privacidade.') });
     } finally {
       setLoading(false);
     }
@@ -95,16 +111,20 @@ const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
         {/* Left Column: Profile Card */}
         <div className="lg:col-span-1 space-y-6">
           <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm text-center">
-            <div className="relative inline-block">
-               <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-3xl font-bold mx-auto mb-4 border-4 border-white shadow-md overflow-hidden">
+            <div className="relative inline-block group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+               <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-3xl font-bold mx-auto mb-4 border-4 border-white shadow-md overflow-hidden relative">
                  {formData.logo ? (
                     <img src={formData.logo} alt="Logo" className="w-full h-full object-cover" />
                  ) : (
                     formData.companyName.substring(0,2).toUpperCase()
                  )}
+                 {/* Overlay de edição ao passar o mouse */}
+                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Camera className="w-8 h-8 text-white" />
+                 </div>
                </div>
                <button className="absolute bottom-0 right-0 bg-white border border-slate-200 p-1.5 rounded-full text-slate-500 hover:text-blue-600 shadow-sm">
-                 <User className="w-4 h-4" />
+                 <Upload className="w-4 h-4" />
                </button>
             </div>
             <h2 className="font-bold text-slate-900 text-lg">{formData.companyName}</h2>
@@ -166,18 +186,32 @@ const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">URL do Logo (Imagem)</label>
-                <div className="relative">
-                  <ImageIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-                  <input 
-                    type="text" 
-                    value={formData.logo}
-                    onChange={(e) => handleChange('logo', e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg pl-10 pr-3 py-2.5 focus:ring-2 focus:ring-blue-500"
-                    placeholder="https://..."
-                  />
+                <label className="block text-sm font-medium text-slate-700 mb-1">Logotipo</label>
+                <div className="flex items-center space-x-4 p-4 border border-slate-200 border-dashed rounded-lg bg-slate-50">
+                   <div className="w-12 h-12 bg-white rounded-lg border border-slate-200 flex items-center justify-center overflow-hidden shrink-0">
+                      {formData.logo ? (
+                        <img src={formData.logo} alt="Preview" className="w-full h-full object-cover" />
+                      ) : (
+                        <User className="text-slate-300" />
+                      )}
+                   </div>
+                   <div className="flex-1">
+                      <input 
+                        type="file" 
+                        ref={fileInputRef}
+                        onChange={handleFileChange}
+                        accept="image/png, image/jpeg, image/jpg"
+                        className="hidden"
+                      />
+                      <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="text-sm font-bold text-blue-600 hover:text-blue-700 hover:underline"
+                      >
+                        Carregar nova imagem
+                      </button>
+                      <p className="text-xs text-slate-500">JPG ou PNG. Max 2MB.</p>
+                   </div>
                 </div>
-                <p className="text-xs text-slate-400 mt-1">Cole o link direto de uma imagem (JPG/PNG).</p>
               </div>
               
               <div>
@@ -227,17 +261,17 @@ const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
             </div>
             <div className="p-6 space-y-4">
                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Email de Login</label>
+                  <label className="block text-sm font-bold text-slate-800 mb-1">Email Cadastrado</label>
+                  <p className="text-xs text-slate-500 mb-2">Este é o email utilizado para acessar sua conta. Confirme se está correto.</p>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500 w-4 h-4" />
                     <input 
                       type="email" 
-                      value={formData.email}
+                      value={formData.email || 'Email não disponível (Verifique o cadastro)'}
                       disabled
-                      className="w-full border border-slate-200 bg-slate-50 rounded-lg pl-10 pr-3 py-2.5 text-slate-500 cursor-not-allowed"
+                      className="w-full border border-slate-300 bg-slate-100 rounded-lg pl-10 pr-3 py-3 text-slate-700 font-medium cursor-not-allowed shadow-inner"
                     />
                   </div>
-                  <p className="text-xs text-slate-400 mt-1">Gerenciado pelo app principal (Somente leitura).</p>
                </div>
             </div>
           </div>

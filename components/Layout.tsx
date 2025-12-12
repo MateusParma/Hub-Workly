@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { LayoutDashboard, Users, Ticket, Settings, Menu, X, Crown, LogOut, Terminal, Activity, Camera, ScanLine } from 'lucide-react';
+import { LayoutDashboard, Users, Ticket, Settings, Menu, X, Crown, LogOut, Terminal, Activity, Camera, ScanLine, Database } from 'lucide-react';
 import { Company } from '../types';
 import QRScannerModal from './QRScannerModal';
 
@@ -10,9 +10,11 @@ interface LayoutProps {
   onChangeView: (view: string) => void;
   currentUser: Company;
   debugLogs?: string[]; // Propriedade opcional para logs
+  onToggleEnv?: () => void; // Nova prop para alternar ambiente
+  isTestEnv?: boolean; // Nova prop para saber se está em teste
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, currentView, onChangeView, currentUser, debugLogs = [] }) => {
+const Layout: React.FC<LayoutProps> = ({ children, currentView, onChangeView, currentUser, debugLogs = [], onToggleEnv, isTestEnv = false }) => {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
   const [isDebugOpen, setIsDebugOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -133,6 +135,13 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, onChangeView, cu
 
         {/* Page Content */}
         <main className="flex-1 overflow-y-auto p-4 lg:p-8 bg-[#FFFDFB] pb-12">
+           {/* Admin Environment Indicator */}
+           {currentUser.ADM && isTestEnv && (
+               <div className="mb-4 bg-yellow-100 border border-yellow-200 text-yellow-800 px-4 py-2 rounded-lg flex items-center animate-pulse">
+                   <Database className="w-4 h-4 mr-2" />
+                   <span className="text-sm font-bold">AMBIENTE DE TESTE ATIVO</span>
+               </div>
+           )}
           <div className="max-w-7xl mx-auto animate-fadeIn">
             {children}
           </div>
@@ -142,19 +151,34 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, onChangeView, cu
         <div className="bg-slate-900 text-slate-400 text-xs py-1 px-4 flex justify-between items-center border-t border-slate-700 absolute bottom-0 w-full z-10">
           <div className="flex items-center space-x-4">
             <span className="flex items-center">
-               <Activity className="w-3 h-3 mr-1 text-green-500" />
-               Status: Online
+               <Activity className={`w-3 h-3 mr-1 ${isTestEnv ? 'text-yellow-500' : 'text-green-500'}`} />
+               Env: {isTestEnv ? 'TEST' : 'LIVE'}
             </span>
             <span className="hidden sm:inline">UID: {currentUser._id}</span>
-            <span className="hidden sm:inline">Env: {window.location.hostname}</span>
           </div>
-          <button 
-             onClick={() => setIsDebugOpen(!isDebugOpen)}
-             className="hover:text-white flex items-center bg-slate-800 px-2 py-0.5 rounded"
-          >
-            <Terminal className="w-3 h-3 mr-1" />
-            {isDebugOpen ? 'Fechar Logs' : 'Debug'}
-          </button>
+          
+          <div className="flex items-center space-x-2">
+            {/* Botão de Troca de Ambiente (Apenas Admins) */}
+            {currentUser.ADM && (
+                <button 
+                    onClick={onToggleEnv}
+                    className={`flex items-center px-2 py-0.5 rounded text-xs font-bold transition-colors ${
+                        isTestEnv ? 'bg-yellow-600 text-black hover:bg-yellow-500' : 'bg-green-700 text-white hover:bg-green-600'
+                    }`}
+                >
+                    <Database className="w-3 h-3 mr-1" />
+                    {isTestEnv ? "Switch to LIVE" : "Switch to TEST"}
+                </button>
+            )}
+
+            <button 
+               onClick={() => setIsDebugOpen(!isDebugOpen)}
+               className="hover:text-white flex items-center bg-slate-800 px-2 py-0.5 rounded"
+            >
+              <Terminal className="w-3 h-3 mr-1" />
+              {isDebugOpen ? 'Fechar Logs' : 'Debug'}
+            </button>
+          </div>
         </div>
 
         {/* Debug Console Overlay */}

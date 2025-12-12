@@ -1,8 +1,23 @@
 
 import { Company, BubbleResponse, Coupon, DashboardStats, Redemption } from '../types';
 
-// CONFIGURAÇÃO: Base da URL
-const BUBBLE_API_ROOT = "https://workly.pt/version-test/api/1.1/obj";
+// CONFIGURAÇÃO: Base da URL Dinâmica
+// Padrão: LIVE
+let BUBBLE_API_ROOT = "https://workly.pt/api/1.1/obj";
+
+export const setApiEnvironment = (env: 'live' | 'test') => {
+    if (env === 'test') {
+        BUBBLE_API_ROOT = "https://workly.pt/version-test/api/1.1/obj";
+        console.log("Environment Switched to: TEST (version-test)");
+    } else {
+        BUBBLE_API_ROOT = "https://workly.pt/api/1.1/obj";
+        console.log("Environment Switched to: LIVE");
+    }
+};
+
+export const getApiEnvironment = () => {
+    return BUBBLE_API_ROOT.includes('version-test') ? 'test' : 'live';
+};
 
 // Mock Data para Fallback
 const MOCK_COMPANIES: Company[] = [
@@ -108,6 +123,9 @@ const mapBubbleToCompany = (item: any, categoryMap: Record<string, string> = {},
       }
   }
 
+  // Lógica de ADM (Verifica se é "sim" string ou true boolean)
+  const isAdm = item['ADM'] === 'sim' || item['ADM'] === true;
+
   return {
     _id: item._id,
     Name: item['Nome da empresa'] || "Empresa Sem Nome",
@@ -122,7 +140,8 @@ const mapBubbleToCompany = (item: any, categoryMap: Record<string, string> = {},
     IsPartner: true, 
     Coupons: generatedCoupons,
     CreatedDate: item['Created Date'],
-    carteira_cupons: carteiraList
+    carteira_cupons: carteiraList,
+    ADM: isAdm
   };
 };
 

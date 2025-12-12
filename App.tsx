@@ -5,7 +5,7 @@ import PartnerDirectory from './components/PartnerDirectory';
 import MyCoupons from './components/MyCoupons';
 import Settings from './components/Settings';
 import { Company } from './types';
-import { fetchCompanyById } from './services/bubbleService';
+import { fetchCompanyById, setApiEnvironment, getApiEnvironment } from './services/bubbleService';
 import { Loader2, LogIn, Search } from 'lucide-react';
 
 interface ErrorBoundaryProps {
@@ -18,13 +18,10 @@ interface ErrorBoundaryState {
 }
 
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = {
-      hasError: false,
-      error: null
-    };
-  }
+  public state: ErrorBoundaryState = {
+    hasError: false,
+    error: null
+  };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
@@ -68,6 +65,7 @@ const AppContent: React.FC = () => {
   const [authLoading, setAuthLoading] = useState(true);
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const [manualUid, setManualUid] = useState('');
+  const [isTestEnv, setIsTestEnv] = useState(false);
 
   const addLog = (msg: string) => {
     setDebugLog(prev => [...prev, `${new Date().toLocaleTimeString()} - ${msg}`]);
@@ -76,7 +74,7 @@ const AppContent: React.FC = () => {
   const loadUser = async (uid: string) => {
     setAuthLoading(true);
     const cleanUid = uid.replace(/['"\s]/g, '');
-    addLog(`Buscando dados para ID: ${cleanUid}`);
+    addLog(`Buscando dados para ID: ${cleanUid} (Env: ${getApiEnvironment()})`);
     
     try {
       const company = await fetchCompanyById(cleanUid);
@@ -86,7 +84,7 @@ const AppContent: React.FC = () => {
           addLog(`⚠️ Dados retornaram com erro: ${company.Description}`);
         } else {
           addLog("✅ Dados carregados com sucesso!");
-          addLog(`Nome: ${company.Name}`);
+          addLog(`Nome: ${company.Name} | ADM: ${company.ADM ? 'Sim' : 'Não'}`);
         }
       } else {
         addLog("❌ Nenhum dado encontrado.");
@@ -124,6 +122,20 @@ const AppContent: React.FC = () => {
       window.history.pushState({ path: newUrl }, '', newUrl);
       loadUser(manualUid);
     }
+  };
+
+  const handleToggleEnv = async () => {
+      const newEnv = !isTestEnv ? 'test' : 'live';
+      setApiEnvironment(newEnv);
+      setIsTestEnv(!isTestEnv);
+      addLog(`Ambiente alterado para: ${newEnv.toUpperCase()}. Recarregando...`);
+      
+      // Recarrega dados com novo ambiente
+      if (currentUser?._id) {
+          await loadUser(currentUser._id);
+          // Força reset da view para dashboard para garantir refresh dos componentes
+          setCurrentView('dashboard'); 
+      }
   };
 
   if (authLoading) {
@@ -209,6 +221,8 @@ const AppContent: React.FC = () => {
       onChangeView={setCurrentView}
       currentUser={currentUser}
       debugLogs={debugLog}
+      onToggleEnv={handleToggleEnv}
+      isTestEnv={isTestEnv}
     >
       {renderView()}
     </Layout>

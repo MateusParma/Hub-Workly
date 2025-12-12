@@ -37,6 +37,7 @@ export interface Company {
   Coupons?: Coupon[]; // Lista de cupons CRIADOS pela empresa
   CreatedDate?: string; 
   carteira_cupons?: string[]; // LISTA DE CUPONS QUE EU RESGATEI (Campo: carteira_cupons)
+  ADM?: boolean; // Se 'sim', permite trocar ambiente (Live/Test)
 }
 
 export interface Redemption {

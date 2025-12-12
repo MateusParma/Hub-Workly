@@ -1,7 +1,8 @@
 
 import React, { useState } from 'react';
-import { LayoutDashboard, Users, Ticket, Settings, Menu, X, Crown, LogOut, Terminal, Activity } from 'lucide-react';
+import { LayoutDashboard, Users, Ticket, Settings, Menu, X, Crown, LogOut, Terminal, Activity, Camera } from 'lucide-react';
 import { Company } from '../types';
+import QRScannerModal from './QRScannerModal';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -14,6 +15,7 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children, currentView, onChangeView, currentUser, debugLogs = [] }) => {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
   const [isDebugOpen, setIsDebugOpen] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
 
   const NavItem = ({ icon: Icon, label, viewId }: { icon: any, label: string, viewId: string }) => {
     const active = currentView === viewId;
@@ -92,15 +94,26 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, onChangeView, cu
       <div className="flex-1 flex flex-col overflow-hidden relative">
         {/* Header */}
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 lg:px-8">
-          <button 
-            onClick={() => setIsSidebarOpen(true)}
-            className="lg:hidden text-slate-500 hover:text-slate-700"
-          >
-            <Menu className="w-6 h-6" />
-          </button>
+          <div className="flex items-center">
+             <button 
+                onClick={() => setIsSidebarOpen(true)}
+                className="lg:hidden text-slate-500 hover:text-slate-700 mr-4"
+              >
+                <Menu className="w-6 h-6" />
+             </button>
+             
+             {/* SCANNER BUTTON - MOBILE/DESKTOP */}
+             <button
+               onClick={() => setIsScannerOpen(true)}
+               className="flex items-center bg-slate-900 text-white px-3 py-2 rounded-lg hover:bg-slate-800 transition-colors shadow-sm"
+             >
+                <Camera className="w-4 h-4 mr-2" />
+                <span className="text-sm font-bold">Scanner</span>
+             </button>
+          </div>
 
           <div className="flex items-center space-x-4 ml-auto">
-             <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-sm">
+             <span className="hidden sm:inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-sm">
                  <Crown className="w-3 h-3 mr-1" /> Membro PRO
              </span>
             <div className="flex items-center space-x-2 border-l border-slate-200 pl-4">
@@ -162,6 +175,9 @@ const Layout: React.FC<LayoutProps> = ({ children, currentView, onChangeView, cu
           </div>
         )}
       </div>
+
+      {/* SCANNER MODAL */}
+      <QRScannerModal isOpen={isScannerOpen} onClose={() => setIsScannerOpen(false)} />
     </div>
   );
 };

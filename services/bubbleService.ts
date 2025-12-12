@@ -53,8 +53,6 @@ const mapBubbleToCompany = (item: any, categoryMap: Record<string, string> = {},
 
   let generatedCoupons: Coupon[] = [];
   
-  // ESTRATÉGIA HÍBRIDA:
-  // 1. Tenta pegar da lista aninhada (se o Bubble enviou)
   const listKey = item['Lista_cupons'] ? 'Lista_cupons' : 'Lista_Cupons';
   if (Array.isArray(item[listKey])) {
       generatedCoupons = item[listKey].map((c: any) => {
@@ -63,16 +61,12 @@ const mapBubbleToCompany = (item: any, categoryMap: Record<string, string> = {},
       }).filter((c): c is Coupon => c !== null);
   }
 
-  // 2. Fallback: Se a lista acima estiver vazia ou só tiver IDs (string),
-  // tentamos casar com os cupons buscados separadamente pelo 'Dono' ou pelo ID na lista.
+  // Fallback para cupons
   if (generatedCoupons.length === 0 && extraCoupons.length > 0) {
-      // Filtra cupons onde 'Dono' é o ID desta empresa
       const ownedCoupons = extraCoupons.filter(c => c.Dono === item._id);
-      
       if (ownedCoupons.length > 0) {
           generatedCoupons = ownedCoupons;
       } else if (Array.isArray(item[listKey])) {
-          // Se não tem Dono, tenta bater o ID da lista de strings com o ID do cupom
           const idsList = item[listKey];
           if (idsList.length > 0 && typeof idsList[0] === 'string') {
                generatedCoupons = extraCoupons.filter(c => idsList.includes(c.id));
@@ -80,7 +74,15 @@ const mapBubbleToCompany = (item: any, categoryMap: Record<string, string> = {},
       }
   }
 
-  // Lógica Aprimorada de Categoria
+  // Mapear Carteira de Cupons (Resgatados)
+  let carteiraList: string[] = [];
+  if (Array.isArray(item['carteira_cupons'])) {
+      carteiraList = item['carteira_cupons'];
+  } else if (Array.isArray(item['Carteira_Cupons'])) {
+      carteiraList = item['Carteira_Cupons'];
+  }
+
+  // Lógica de Categoria
   let category = "Parceiro";
   const rawSetor = item['Setor de Atuação'] || item['Setor'] || item['Categoria'];
   
@@ -115,7 +117,8 @@ const mapBubbleToCompany = (item: any, categoryMap: Record<string, string> = {},
     Email: rawEmail,
     IsPartner: true, 
     Coupons: generatedCoupons,
-    CreatedDate: item['Created Date'] || item['Created_Date']
+    CreatedDate: item['Created Date'] || item['Created_Date'],
+    carteira_cupons: carteiraList
   };
 };
 
@@ -147,6 +150,7 @@ const fetchWithFallback = async (targetUrl: string, signal?: AbortSignal, method
   return null; 
 };
 
+// ... (fetchCategoriesMap, fetchFromTableVariants, enrichCoupons - MANTIDOS IGUAIS) ...
 // Busca auxiliar para mapear IDs de Categoria -> Titulo
 const fetchCategoriesMap = async (): Promise<Record<string, string>> => {
     const map: Record<string, string> = {};
@@ -230,11 +234,10 @@ export const fetchCompanyById = async (id: string): Promise<Company | null> => {
   return null;
 };
 
-// FUNÇÃO REESCRITA PARA FALLBACK E PERFORMANCE
+// ... (fetchCompanies, fetchDashboardStats, updateCompany, createCoupon, updateCoupon, deleteCoupon - MANTIDOS IGUAIS) ...
 export const fetchCompanies = async (): Promise<Company[]> => {
   const controller = new AbortController();
   try {
-      // 1. Busca Empresas
       let url = `${BUBBLE_API_ROOT}/Empresa?t=${Date.now()}`;
       let json = await fetchWithFallback(url, controller.signal);
       
@@ -243,22 +246,17 @@ export const fetchCompanies = async (): Promise<Company[]> => {
          json = await fetchWithFallback(url, controller.signal);
       }
 
-      // 2. Busca Categorias em paralelo
       const categoryMapPromise = fetchCategoriesMap();
-      
-      // 3. Busca TODOS os cupons em paralelo (Fallback robusto)
       const allCouponsPromise = fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom?t=${Date.now()}`, controller.signal);
 
       const [categoryMap, allCouponsJson] = await Promise.all([categoryMapPromise, allCouponsPromise]);
 
-      // Processa lista de todos os cupons disponíveis
       let allCoupons: Coupon[] = [];
       if (allCouponsJson && allCouponsJson.response && allCouponsJson.response.results) {
           allCoupons = allCouponsJson.response.results.map((c: any) => mapBubbleToCoupon(c));
       }
 
       if (json && json.response && json.response.results) {
-          // Passa a lista completa de cupons para o mapper fazer o "join" em memória
           return json.response.results.map((item: any) => mapBubbleToCompany(item, categoryMap, allCoupons));
       }
   } catch (error) {
@@ -267,64 +265,28 @@ export const fetchCompanies = async (): Promise<Company[]> => {
   return MOCK_COMPANIES;
 };
 
-// NOVA FUNÇÃO: Busca estatísticas reais do sistema
 export const fetchDashboardStats = async (): Promise<DashboardStats> => {
     const controller = new AbortController();
-    
-    // Default stats
-    const stats: DashboardStats = {
-        totalPartners: 0,
-        totalCoupons: 0,
-        totalRedemptions: 0,
-        recentPartners: [],
-        topCategories: []
-    };
-
+    const stats: DashboardStats = { totalPartners: 0, totalCoupons: 0, totalRedemptions: 0, recentPartners: [], topCategories: [] };
     try {
-        // Fetch Parallel: Empresas, Cupons, Categorias
         const [companiesData, couponsData, categoryMap] = await Promise.all([
             fetchCompanies(),
             fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom`, controller.signal),
             fetchCategoriesMap()
         ]);
-
-        // Process Companies
         if (companiesData) {
             stats.totalPartners = companiesData.length;
-            
-            // Recent Partners (Last 5 based on created date if available, or just first 5)
-            stats.recentPartners = companiesData
-                .sort((a, b) => (b.CreatedDate || '').localeCompare(a.CreatedDate || ''))
-                .slice(0, 5);
-
-            // Calculate Categories Distribution
+            stats.recentPartners = companiesData.sort((a, b) => (b.CreatedDate || '').localeCompare(a.CreatedDate || '')).slice(0, 5);
             const catCounts: Record<string, number> = {};
-            companiesData.forEach(c => {
-                const cat = c.Category || 'Outros';
-                catCounts[cat] = (catCounts[cat] || 0) + 1;
-            });
-            
-            stats.topCategories = Object.entries(catCounts)
-                .map(([name, count]) => ({ name, count }))
-                .sort((a, b) => b.count - a.count)
-                .slice(0, 4); // Top 4
+            companiesData.forEach(c => { const cat = c.Category || 'Outros'; catCounts[cat] = (catCounts[cat] || 0) + 1; });
+            stats.topCategories = Object.entries(catCounts).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 4);
         }
-
-        // Process Coupons (Direct Table Access for Accuracy)
         if (couponsData && couponsData.response && couponsData.response.results) {
             const allCoupons = couponsData.response.results;
             stats.totalCoupons = allCoupons.length;
-            
-            // Sum 'usos_atuais'
-            stats.totalRedemptions = allCoupons.reduce((acc: number, curr: any) => {
-                return acc + (Number(curr.usos_atuais) || Number(curr.Usos) || 0);
-            }, 0);
+            stats.totalRedemptions = allCoupons.reduce((acc: number, curr: any) => acc + (Number(curr.usos_atuais) || Number(curr.Usos) || 0), 0);
         }
-
-    } catch (e) {
-        console.warn("Erro ao calcular dashboard stats", e);
-    }
-
+    } catch (e) {}
     return stats;
 };
 
@@ -337,10 +299,7 @@ export const updateCompany = async (id: string, data: Partial<Company>): Promise
   if (data.Address) payload['Morada'] = data.Address; 
   if (data.Description) payload['Descricao'] = data.Description;
   if (data.Logo) payload['Logo'] = data.Logo;
-  try {
-      await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${id}`, undefined, 'PATCH', payload);
-      return true;
-  } catch (e) { return false; }
+  try { await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${id}`, undefined, 'PATCH', payload); return true; } catch (e) { return false; }
 };
 
 export const createCoupon = async (companyId: string, couponData: any): Promise<string | null> => {
@@ -353,13 +312,12 @@ export const createCoupon = async (companyId: string, couponData: any): Promise<
         ativo: true,
         Dono: companyId,
         usos_atuais: 0,
-        Utilizadores: [] // Inicia lista vazia
+        Utilizadores: []
     };
     const result = await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom`, undefined, 'POST', payload);
     if (result && result.id) {
         const newCouponId = result.id;
         try {
-            // Vincula à lista da empresa
             const company = await fetchCompanyById(companyId); 
             const currentCoupons = company?.Coupons?.map(c => c.id) || [];
             const newCouponsList = [...currentCoupons, newCouponId];
@@ -378,7 +336,6 @@ export const updateCoupon = async (couponId: string, couponData: any): Promise<b
     if (couponData.maxUses) payload.max_usos = Number(couponData.maxUses);
     if (couponData.expiryDate) payload.validade = couponData.expiryDate;
     if (couponData.status) payload.ativo = (couponData.status === 'active');
-
     const result = await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom/${couponId}`, undefined, 'PATCH', payload);
     return !!result;
 };
@@ -388,19 +345,42 @@ export const deleteCoupon = async (couponId: string): Promise<boolean> => {
     return !!result;
 };
 
-// --- NOVAS FUNÇÕES: RESGATE E CARTEIRA ---
+// --- LOGICA REFINADA DE RESGATE E CARTEIRA ---
 
-// Adiciona o usuário à lista de Utilizadores do cupom
-export const claimCoupon = async (couponId: string, companyId: string, currentUsers: string[]): Promise<boolean> => {
-    if (currentUsers.includes(companyId)) return true; // Já pegou
+// 1. Resgatar Cupom (Vincula Coupon->User e User->Coupon)
+export const claimCoupon = async (couponId: string, companyId: string, currentUtilizadores: string[]): Promise<boolean> => {
+    // Verificação de segurança
+    if (currentUtilizadores.includes(companyId)) return true;
 
-    const newList = [...currentUsers, companyId];
-    
     try {
+        // Passo 1: Atualizar o Cupom (Adicionar user na lista Utilizadores)
+        const newUtilizadoresList = [...currentUtilizadores, companyId];
         await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom/${couponId}`, undefined, 'PATCH', {
-            Utilizadores: newList,
-            usos_atuais: newList.length // Atualiza contagem
+            Utilizadores: newUtilizadoresList,
+            usos_atuais: newUtilizadoresList.length
         });
+
+        // Passo 2: Atualizar o Usuário (Adicionar cupom na lista carteira_cupons)
+        const user = await fetchCompanyById(companyId);
+        if (user) {
+            const currentWallet = user.carteira_cupons || [];
+            // Evita duplicata na lista do usuario
+            if (!currentWallet.includes(couponId)) {
+                const newWalletList = [...currentWallet, couponId];
+                
+                // Tenta atualizar tanto a tabela Empresa quanto User para garantir (depende de onde o ID veio)
+                // Se o ID é de User, atualiza User. Se é Empresa, Empresa.
+                // Como fetchCompanyById abstrai isso, vamos tentar adivinhar ou fazer os dois se falhar.
+                
+                // Primeiro tenta como Empresa (mais provável no Hub Empresarial)
+                let success = await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${companyId}`, undefined, 'PATCH', { "carteira_cupons": newWalletList });
+                
+                // Se falhar ou retornar null, tenta User
+                if (!success || success.statusCode >= 400) {
+                     await fetchWithFallback(`${BUBBLE_API_ROOT}/User/${companyId}`, undefined, 'PATCH', { "carteira_cupons": newWalletList });
+                }
+            }
+        }
         return true;
     } catch (e) {
         console.error("Erro ao resgatar cupom", e);
@@ -408,43 +388,41 @@ export const claimCoupon = async (couponId: string, companyId: string, currentUs
     }
 };
 
-// Busca todos os cupons onde o companyId está na lista Utilizadores
-// ATUALIZADO: Com fallback Client-Side se a constraint de API falhar
+// 2. Busca a Carteira (Prioriza a lista no perfil do usuário para performance)
 export const fetchClaimedCoupons = async (companyId: string): Promise<Coupon[]> => {
     try {
-        // Tenta filtrar via API
-        const constraints = [
-            { key: "Utilizadores", constraint_type: "contains", value: companyId }
-        ];
-        
-        const url = `${BUBBLE_API_ROOT}/Cupom?constraints=${JSON.stringify(constraints)}`;
-        const result = await fetchWithFallback(url);
+        let couponIds: string[] = [];
+
+        // Busca dados frescos do usuário para pegar a lista de IDs
+        const user = await fetchCompanyById(companyId);
+        if (user && user.carteira_cupons && user.carteira_cupons.length > 0) {
+            couponIds = user.carteira_cupons;
+        }
 
         let coupons: Coupon[] = [];
 
-        if (result && result.response && result.response.results && result.response.results.length > 0) {
-            coupons = result.response.results.map((c: any) => mapBubbleToCoupon(c));
+        if (couponIds.length > 0) {
+             // Busca detalhes de cada cupom em paralelo
+             const promises = couponIds.map(id => fetchFromTableVariants(id, 'Cupom'));
+             const results = await Promise.all(promises);
+             coupons = results.filter(r => r !== null).map(c => mapBubbleToCoupon(c));
         } else {
-            // FALLBACK: Se API retornou vazio (talvez por permissão de busca), busca TUDO e filtra aqui
-            // Isso garante que se o dado existe, o usuário vê.
-            const allUrl = `${BUBBLE_API_ROOT}/Cupom`;
-            const allResult = await fetchWithFallback(allUrl);
-            if (allResult && allResult.response && allResult.response.results) {
-                const allMapped = allResult.response.results.map((c: any) => mapBubbleToCoupon(c));
-                coupons = allMapped.filter(c => c.utilizadores && c.utilizadores.includes(companyId));
+            // Fallback: Busca reversa (Cupons onde eu estou na lista) - Mais lento mas seguro
+            const constraints = [{ key: "Utilizadores", constraint_type: "contains", value: companyId }];
+            const url = `${BUBBLE_API_ROOT}/Cupom?constraints=${JSON.stringify(constraints)}`;
+            const result = await fetchWithFallback(url);
+            if (result && result.response && result.response.results) {
+                coupons = result.response.results.map((c: any) => mapBubbleToCoupon(c));
             }
         }
 
-        // Tenta enriquecer com dados do Dono
+        // Enriquece com dados do Dono (Logo/Nome da loja)
         if (coupons.length > 0) {
             const allCompanies = await fetchCompanies();
             return coupons.map(c => {
                 const owner = allCompanies.find(comp => comp._id === c.Dono);
                 if (owner) {
-                    c.ownerData = {
-                        name: owner.Name,
-                        logo: owner.Logo || ''
-                    };
+                    c.ownerData = { name: owner.Name, logo: owner.Logo || '' };
                 }
                 return c;
             });
@@ -453,4 +431,44 @@ export const fetchClaimedCoupons = async (companyId: string): Promise<Coupon[]> 
         console.warn("Erro ao buscar carteira de cupons", e);
     }
     return [];
+};
+
+// 3. Validar QR Code (Simulação de validação no caixa)
+export const processQrCode = async (dataString: string): Promise<{valid: boolean, message: string, coupon?: Coupon}> => {
+    try {
+        // Esperado formato: "COUPON_ID:USER_ID" ou JSON
+        let couponId = "";
+        let userId = "";
+
+        if (dataString.includes(":")) {
+            const parts = dataString.split(":");
+            couponId = parts[0];
+            userId = parts[1];
+        } else {
+            // Tenta achar apenas ID do cupom
+            couponId = dataString;
+        }
+
+        if (!couponId) return { valid: false, message: "Código inválido." };
+
+        // Busca o cupom no banco
+        const couponData = await fetchFromTableVariants(couponId, 'Cupom');
+        if (!couponData) return { valid: false, message: "Cupom não encontrado." };
+
+        const coupon = mapBubbleToCoupon(couponData);
+
+        if (coupon.status !== 'active') return { valid: false, message: "Este cupom está inativo ou expirado." };
+
+        // Se tiver ID do usuário no QR, verifica se ele realmente resgatou
+        if (userId) {
+            if (!coupon.utilizadores?.includes(userId)) {
+                return { valid: false, message: "Este usuário não resgatou este cupom oficialmente." };
+            }
+        }
+
+        return { valid: true, message: "Cupom Válido! Pode aplicar o desconto.", coupon };
+
+    } catch (e) {
+        return { valid: false, message: "Erro ao processar código." };
+    }
 };

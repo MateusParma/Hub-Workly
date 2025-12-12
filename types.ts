@@ -35,6 +35,7 @@ export interface Company {
   IsPartner: boolean;
   Coupons?: Coupon[]; // Lista de cupons da tabela Empresa
   CreatedDate?: string; // Data de criação para ordenação
+  carteira_cupons?: string[]; // LISTA DE CUPONS QUE EU RESGATEI
 }
 
 export interface DashboardStats {

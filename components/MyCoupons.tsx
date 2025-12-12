@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Ticket, Plus, Trash2, Edit, Calendar, Hash, Loader2, Save, X, AlertCircle, ShoppingBag, Store } from 'lucide-react';
+import { Ticket, Plus, Trash2, Edit, Calendar, Hash, Loader2, Save, X, AlertCircle, ShoppingBag, Store, QrCode } from 'lucide-react';
 import { Company, Coupon } from '../types';
 import { fetchCompanyById, createCoupon, updateCoupon, deleteCoupon, fetchClaimedCoupons } from '../services/bubbleService'; 
 
@@ -14,6 +14,7 @@ const MyCoupons: React.FC = () => {
   // Carteira
   const [walletCoupons, setWalletCoupons] = useState<Coupon[]>([]);
   const [loadingWallet, setLoadingWallet] = useState(false);
+  const [selectedQrCoupon, setSelectedQrCoupon] = useState<Coupon | null>(null);
 
   // Modal de Criação
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -252,10 +253,10 @@ const MyCoupons: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {walletCoupons.length > 0 ? (
                         walletCoupons.map((coupon) => (
-                            <div key={coupon.id} className="bg-white border border-green-200 rounded-xl p-5 shadow-sm relative overflow-hidden">
+                            <div key={coupon.id} className="bg-white border border-green-200 rounded-xl p-5 shadow-sm relative overflow-hidden flex flex-col">
                                 <div className="absolute top-0 right-0 w-16 h-16 bg-green-50 rounded-bl-full -mr-8 -mt-8 z-0"></div>
                                 
-                                <div className="relative z-10">
+                                <div className="relative z-10 flex-1">
                                     <div className="flex items-center mb-4">
                                         <div className="w-10 h-10 rounded-full border border-slate-100 bg-white shadow-sm overflow-hidden flex-shrink-0">
                                             {coupon.ownerData?.logo ? (
@@ -276,18 +277,16 @@ const MyCoupons: React.FC = () => {
                                         <div className="text-2xl font-bold text-green-700">{coupon.discountValue}</div>
                                         <p className="text-sm text-slate-600">{coupon.description}</p>
                                     </div>
+                                </div>
 
-                                    <div className="mt-4 bg-slate-100 rounded-lg p-2 flex items-center justify-between border border-dashed border-slate-300">
-                                        <span className="font-mono font-bold text-slate-800 tracking-widest pl-2">
-                                            {coupon.code}
-                                        </span>
-                                        <button 
-                                            onClick={() => {navigator.clipboard.writeText(coupon.code)}}
-                                            className="text-xs bg-white border border-slate-200 px-2 py-1 rounded hover:text-green-600 font-medium"
-                                        >
-                                            Copiar
-                                        </button>
-                                    </div>
+                                <div className="mt-4 pt-4 border-t border-slate-100">
+                                    <button 
+                                        onClick={() => setSelectedQrCoupon(coupon)}
+                                        className="w-full flex items-center justify-center px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors shadow-sm font-bold text-sm"
+                                    >
+                                        <QrCode className="w-4 h-4 mr-2" />
+                                        Usar no Caixa
+                                    </button>
                                 </div>
                             </div>
                         ))
@@ -300,6 +299,36 @@ const MyCoupons: React.FC = () => {
                     )}
                 </div>
             )}
+        </div>
+      )}
+
+      {/* QR CODE DISPLAY MODAL */}
+      {selectedQrCoupon && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center relative shadow-2xl">
+                <button 
+                    onClick={() => setSelectedQrCoupon(null)}
+                    className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
+                >
+                    <X className="w-6 h-6" />
+                </button>
+                
+                <h3 className="text-xl font-bold text-slate-900 mb-1">{selectedQrCoupon.ownerData?.name || "Oferta"}</h3>
+                <p className="text-green-600 font-bold mb-6">{selectedQrCoupon.discountValue} - {selectedQrCoupon.code}</p>
+                
+                <div className="bg-white p-4 rounded-xl border-2 border-slate-900 inline-block mb-6">
+                    {/* QR Code gerado por API para evitar peso de lib extra, combinando ID do cupom e ID do usuario para validação */}
+                    <img 
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${selectedQrCoupon.id}:${currentUser?._id}`}
+                        alt="QR Code" 
+                        className="w-48 h-48"
+                    />
+                </div>
+                
+                <p className="text-sm text-slate-500 px-4">
+                    Apresente este código ao parceiro para validar seu desconto.
+                </p>
+            </div>
         </div>
       )}
 
@@ -318,14 +347,13 @@ const MyCoupons: React.FC = () => {
             </div>
             
             <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
-              
               {errorMsg && (
                   <div className="bg-red-50 text-red-700 p-3 rounded text-sm flex items-center">
                       <AlertCircle className="w-4 h-4 mr-2" />
                       {errorMsg}
                   </div>
               )}
-
+              {/* Campos do formulário iguais aos anteriores... */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Código do Cupom</label>

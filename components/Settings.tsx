@@ -12,7 +12,7 @@ const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
   // Initialize form with current user data
   const [formData, setFormData] = useState({
     companyName: currentUser.Name,
-    email: 'email@exemplo.com', // Bubble API doesn't usually expose email in public object endpoints easily without specific setup
+    email: 'email@exemplo.com', 
     phone: currentUser.Phone || '',
     website: currentUser.Website || '',
     address: currentUser.Address || '',
@@ -91,9 +91,10 @@ const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
              <p className="text-slate-400 text-sm mb-4">Gerenciado via Workly App</p>
              <button 
                onClick={handleOpenWorkly}
-               className="w-full py-2 bg-white text-slate-900 hover:bg-slate-100 rounded-lg text-sm font-bold transition-colors flex items-center justify-center"
+               className="w-full py-2 bg-white text-slate-900 hover:bg-slate-100 rounded-lg text-sm font-bold transition-colors flex items-center justify-center group"
              >
-               Gerenciar Assinatura <ExternalLink className="w-3 h-3 ml-2" />
+               Gerenciar Assinatura 
+               <ExternalLink className="w-3 h-3 ml-2 group-hover:translate-x-1 transition-transform" />
              </button>
           </div>
         </div>

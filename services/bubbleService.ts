@@ -1,11 +1,9 @@
 import { Company, BubbleResponse } from '../types';
 
-// CONFIGURAÇÃO: URL oficial
-// Usando version-test pois geralmente é onde o desenvolvimento ocorre.
-// Se em produção, remover 'version-test'.
-const BUBBLE_API_BASE = "https://workly.pt/version-test/api/1.1/obj/empresa";
+// CONFIGURAÇÃO: Base da URL sem o nome da tabela
+const BUBBLE_API_ROOT = "https://workly.pt/version-test/api/1.1/obj";
 
-// Mock Data para Fallback
+// Mock Data para Fallback (apenas se tudo falhar)
 const MOCK_COMPANIES: Company[] = [
   {
     _id: "mock1",
@@ -25,6 +23,7 @@ const cleanImageUrl = (url?: string) => {
   return url.startsWith('//') ? `https:${url}` : url;
 };
 
+// Mapeia os dados brutos do Bubble para nossa interface Company
 const mapBubbleToCompany = (item: any): Company => {
   if (!item) return MOCK_COMPANIES[0];
   
@@ -54,73 +53,82 @@ const mapBubbleToCompany = (item: any): Company => {
   };
 };
 
+// Função genérica de fetch com tentativas em proxies
 const fetchWithFallback = async (targetUrl: string, signal: AbortSignal) => {
-  // 1. Tentar Direto
+  let lastError;
+
+  // 1. Tentar Direto (Caso CORS esteja habilitado ou Same-Origin)
   try {
-    console.log(`[API] Direto: ${targetUrl}`);
     const response = await fetch(targetUrl, { method: 'GET', signal });
     if (response.ok) return await response.json();
-    console.warn(`[API] Direto falhou: ${response.status}`);
-  } catch (e) {
-    console.warn("[API] Erro conexão direta.");
+    if (response.status === 404) throw new Error("404_NOT_FOUND"); // Identificador específico para pular tentativas inúteis
+  } catch (e: any) {
+    if (e.message === "404_NOT_FOUND") throw e; // Se o Bubble disse que não existe, não adianta tentar proxy
+    lastError = e;
   }
 
   // 2. Tentar Proxy 1 (corsproxy.io)
   try {
     const proxy1 = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
-    console.log(`[API] Proxy 1: ${proxy1}`);
     const response = await fetch(proxy1, { method: 'GET', signal });
-    if (response.ok) return await response.json();
-    console.warn(`[API] Proxy 1 falhou: ${response.status}`);
+    if (response.ok) {
+      const data = await response.json();
+      // Verificação se o Bubble retornou erro dentro do JSON (comum em proxies)
+      if (data.statusCode && data.statusCode >= 400) throw new Error("BUBBLE_ERROR_IN_BODY");
+      return data;
+    }
   } catch (e) {
-    console.warn("[API] Proxy 1 erro.");
+    lastError = e;
   }
 
-  // 3. Tentar Proxy 2 (allorigins) - Este proxy retorna o JSON dentro de um campo 'contents' stringificado
+  // 3. Tentar Proxy 2 (allorigins)
   try {
     const proxy2 = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
-    console.log(`[API] Proxy 2: ${proxy2}`);
     const response = await fetch(proxy2, { method: 'GET', signal });
     if (response.ok) {
         const data = await response.json();
-        // AllOrigins retorna { contents: "STRING_DO_JSON", status: ... }
         if (data.contents) {
-            return JSON.parse(data.contents);
+            const parsed = JSON.parse(data.contents);
+            // Verifica erros encapsulados no body do AllOrigins
+            if (parsed.statusCode && parsed.statusCode >= 400) throw new Error("BUBBLE_ERROR_IN_BODY");
+            if (parsed.body && parsed.body.status === "MISSING_DATA") throw new Error("BUBBLE_MISSING_DATA");
+            return parsed;
         }
     }
   } catch (e) {
-    console.warn("[API] Proxy 2 erro.");
+    lastError = e;
   }
 
-  throw new Error("Falha em todos os métodos de conexão.");
+  throw new Error("Falha de conexão ou dado não encontrado.");
 };
 
 export const fetchCompanies = async (): Promise<Company[]> => {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 12000);
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-  try {
-    const url = `${BUBBLE_API_BASE}?t=${Date.now()}`;
-    const json = await fetchWithFallback(url, controller.signal);
-    clearTimeout(timeoutId);
-    
-    // Bubble standard response: { response: { results: [...] } }
-    if (json.response && json.response.results) {
-        return json.response.results.map(mapBubbleToCompany);
-    } 
-    
-    // As vezes o proxy pode ter comido o wrapper 'response'
-    if (json.results) {
-        return json.results.map(mapBubbleToCompany);
+  // Lista de possíveis nomes de tabela (Bubble é Case Sensitive na API)
+  // Tenta 'Empresa' (padrão) primeiro, depois minúsculo.
+  const tablesToTry = ['Empresa', 'empresa']; 
+  
+  for (const tableName of tablesToTry) {
+    try {
+      const url = `${BUBBLE_API_ROOT}/${tableName}?t=${Date.now()}`; // timestamp evita cache
+      console.log(`[LISTA] Tentando tabela: ${tableName}`);
+      
+      const json = await fetchWithFallback(url, controller.signal);
+      
+      if (json.response && json.response.results) {
+          clearTimeout(timeoutId);
+          return json.response.results.map(mapBubbleToCompany);
+      }
+    } catch (error) {
+      console.warn(`[LISTA] Falha na tabela ${tableName}, tentando próxima...`);
     }
-
-    return MOCK_COMPANIES;
-
-  } catch (error: any) {
-    console.error("ERRO LISTA:", error);
-    clearTimeout(timeoutId);
-    return MOCK_COMPANIES;
   }
+
+  clearTimeout(timeoutId);
+  console.error("[LISTA] Todas as tentativas falharam.");
+  return MOCK_COMPANIES;
 };
 
 export const fetchCompanyById = async (id: string): Promise<Company | null> => {
@@ -128,36 +136,40 @@ export const fetchCompanyById = async (id: string): Promise<Company | null> => {
   if (id === 'mock_user') return { ...MOCK_COMPANIES[0], _id: 'mock', Name: "Modo Teste" };
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 12000);
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-  try {
-    const url = `${BUBBLE_API_BASE}/${id}`;
-    const json = await fetchWithFallback(url, controller.signal);
-    clearTimeout(timeoutId);
-    
-    console.log("JSON Recebido (ID):", json);
-
-    // Caso 1: Estrutura Padrão Bubble { response: { ... } }
-    if (json.response) {
-        return mapBubbleToCompany(json.response);
+  // ESTRATÉGIA MULTI-ENDPOINT
+  // O erro do log mostra "Missing object of type empresa".
+  // Vamos tentar variações do nome da tabela. 
+  const tablesToTry = ['Empresa', 'empresa', 'User', 'user'];
+  
+  for (const tableName of tablesToTry) {
+    try {
+      const url = `${BUBBLE_API_ROOT}/${tableName}/${id}`;
+      console.log(`[ID] Tentando buscar ID ${id} na tabela: ${tableName}`);
+      
+      const json = await fetchWithFallback(url, controller.signal);
+      
+      // Sucesso!
+      clearTimeout(timeoutId);
+      
+      if (json.response) return mapBubbleToCompany(json.response);
+      if (json._id) return mapBubbleToCompany(json); // Algumas respostas vêm diretas
+      
+    } catch (error: any) {
+      // Se for um erro de "Missing Data", continuamos o loop para tentar a próxima tabela
+      // Se for erro de rede, também continuamos.
+      console.warn(`[ID] Não encontrado em ${tableName}: ${error.message}`);
     }
-    
-    // Caso 2: Objeto retornado diretamente (alguns proxies ou configs do Bubble)
-    if (json._id || json.Name || json['Nome da empresa']) {
-        return mapBubbleToCompany(json);
-    }
-
-    throw new Error("JSON recebido não possui dados da empresa: " + JSON.stringify(json).substring(0, 100));
-
-  } catch (error: any) {
-    console.error("ERRO ID:", error);
-    clearTimeout(timeoutId);
-    
-    return { 
-        ...MOCK_COMPANIES[0], 
-        _id: id, 
-        Name: "Erro ao Carregar Dados", 
-        Description: `ID: ${id}. Detalhe: ${error.message}.` 
-    };
   }
+
+  clearTimeout(timeoutId);
+  
+  // Se chegou aqui, não encontrou em nenhuma tabela
+  return { 
+      ...MOCK_COMPANIES[0], 
+      _id: id, 
+      Name: "Erro ao Carregar Dados", 
+      Description: `Não foi possível encontrar o ID ${id} nas tabelas: ${tablesToTry.join(', ')}. Verifique se o ID está correto e se os dados estão públicos no Bubble.` 
+  };
 };

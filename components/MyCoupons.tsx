@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Ticket, Plus, Trash2, Edit, Calendar, Hash, Loader2, Save, X, AlertCircle, ShoppingBag, Store, QrCode } from 'lucide-react';
+import { Ticket, Plus, Trash2, Edit, Loader2, Save, X, AlertCircle, ShoppingBag, Store, QrCode, ArrowRight, Share2 } from 'lucide-react';
 import { Company, Coupon } from '../types';
 import { fetchCompanyById, createCoupon, updateCoupon, deleteCoupon, fetchClaimedCoupons } from '../services/bubbleService'; 
 
@@ -124,6 +124,12 @@ const MyCoupons: React.FC = () => {
     }
   };
 
+  // URL Segura do QR Code
+  const getQrCodeUrl = (couponId: string, userId: string) => {
+      const data = encodeURIComponent(`${couponId}:${userId}`);
+      return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=10&data=${data}`;
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between">
@@ -147,7 +153,7 @@ const MyCoupons: React.FC = () => {
           <button
              onClick={() => setActiveTab('wallet')}
              className={`flex items-center px-4 py-2 text-sm font-bold rounded-lg transition-all ${
-                 activeTab === 'wallet' ? 'bg-green-50 text-green-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'
+                 activeTab === 'wallet' ? 'bg-indigo-50 text-indigo-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'
              }`}
           >
              <ShoppingBag className="w-4 h-4 mr-2" />
@@ -199,7 +205,7 @@ const MyCoupons: React.FC = () => {
                       <td className="px-6 py-4 text-sm text-slate-600 space-y-1">
                         <div className="flex items-center font-medium text-slate-700">
                            <ShoppingBag className="w-3 h-3 mr-1" />
-                           {coupon.utilizadores?.length || 0} pegaram
+                           {coupon.utilizadores?.length || 0} resgates
                         </div>
                         {coupon.maxUses && (
                            <div className="text-xs text-slate-400">
@@ -247,61 +253,75 @@ const MyCoupons: React.FC = () => {
         <div className="animate-fadeIn">
             {loadingWallet ? (
                 <div className="flex justify-center p-20 bg-white rounded-xl border border-slate-200">
-                    <Loader2 className="animate-spin text-green-600 w-8 h-8" />
+                    <Loader2 className="animate-spin text-indigo-600 w-8 h-8" />
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {walletCoupons.length > 0 ? (
                         walletCoupons.map((coupon) => (
-                            <div key={coupon.id} className="bg-white border border-green-200 rounded-xl p-5 shadow-sm relative overflow-hidden flex flex-col group hover:shadow-lg transition-shadow">
-                                <div className="absolute top-0 right-0 w-16 h-16 bg-green-50 rounded-bl-full -mr-8 -mt-8 z-0 transition-transform group-hover:scale-110"></div>
-                                
-                                <div className="relative z-10 flex-1">
-                                    <div className="flex items-center mb-4">
-                                        <div className="w-10 h-10 rounded-full border border-slate-100 bg-white shadow-sm overflow-hidden flex-shrink-0">
-                                            {coupon.ownerData?.logo ? (
-                                                <img src={coupon.ownerData.logo} className="w-full h-full object-cover" />
-                                            ) : (
-                                                <div className="w-full h-full flex items-center justify-center bg-slate-100 text-xs font-bold text-slate-400">
-                                                    {coupon.ownerData?.name.substring(0,2) || "??"}
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="ml-3">
-                                            <p className="text-xs text-slate-500 font-bold uppercase">Oferecido por</p>
-                                            <p className="text-sm font-bold text-slate-900 line-clamp-1">{coupon.ownerData?.name || "Parceiro"}</p>
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="text-center py-2 border-y border-dashed border-slate-200 my-2">
-                                        <div className="text-3xl font-bold text-green-700">{coupon.discountValue}</div>
-                                        <p className="text-sm text-slate-600 line-clamp-2 mt-1">{coupon.description}</p>
-                                    </div>
-                                    
-                                    <div className="flex justify-between items-center mt-2">
-                                        <div className="bg-slate-100 px-2 py-1 rounded text-xs font-mono text-slate-600 tracking-widest">
-                                            {coupon.code}
-                                        </div>
-                                        {coupon.status === 'paused' && <span className="text-xs text-red-500 font-bold">Expirado</span>}
-                                    </div>
+                            <div key={coupon.id} className="group relative bg-white rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden border border-slate-200 flex flex-col h-full">
+                                {/* Header Colorido */}
+                                <div className="h-24 bg-gradient-to-br from-indigo-900 to-blue-900 relative p-4 flex justify-between items-start">
+                                    <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')]"></div>
+                                    <span className="relative z-10 px-2 py-0.5 rounded text-[10px] font-bold bg-white/20 text-white backdrop-blur-md uppercase tracking-wide border border-white/20">
+                                        Cupom Digital
+                                    </span>
+                                    {coupon.status === 'paused' && (
+                                        <span className="relative z-10 px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/80 text-white backdrop-blur-md">Expirado</span>
+                                    )}
                                 </div>
 
-                                <div className="mt-4 pt-4">
-                                    <button 
-                                        onClick={() => setSelectedQrCoupon(coupon)}
-                                        className="w-full flex items-center justify-center px-4 py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors shadow-sm font-bold text-sm"
-                                    >
-                                        <QrCode className="w-4 h-4 mr-2" />
-                                        Usar no Caixa
-                                    </button>
+                                {/* Body */}
+                                <div className="px-5 pt-0 pb-5 flex-1 flex flex-col relative">
+                                    {/* Logo do Parceiro */}
+                                    <div className="absolute -top-10 left-5 h-16 w-16 rounded-xl border-4 border-white shadow-md bg-white overflow-hidden">
+                                        {coupon.ownerData?.logo ? (
+                                            <img src={coupon.ownerData.logo} className="w-full h-full object-cover" />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center bg-slate-100 font-bold text-slate-400">
+                                                {coupon.ownerData?.name.substring(0,2) || "??"}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="mt-8 mb-4">
+                                        <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wide mb-1">
+                                            {coupon.ownerData?.name || "Parceiro"}
+                                        </h4>
+                                        <div className="text-3xl font-black text-slate-900 mb-2">
+                                            {coupon.discountValue}
+                                        </div>
+                                        <p className="text-sm text-slate-600 leading-relaxed border-l-2 border-indigo-200 pl-3">
+                                            {coupon.description}
+                                        </p>
+                                    </div>
+
+                                    <div className="mt-auto pt-4 border-t border-dashed border-slate-200 flex items-center justify-between">
+                                        <div className="text-xs font-mono text-slate-500 bg-slate-50 px-2 py-1 rounded border border-slate-100">
+                                            {coupon.code}
+                                        </div>
+                                        <button 
+                                            onClick={() => setSelectedQrCoupon(coupon)}
+                                            className="flex items-center text-sm font-bold text-indigo-600 hover:text-indigo-800 transition-colors"
+                                        >
+                                            <QrCode className="w-4 h-4 mr-1" />
+                                            Usar
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         ))
                     ) : (
-                        <div className="col-span-full bg-white rounded-xl border border-dashed border-slate-200 p-12 text-center">
-                            <ShoppingBag className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                            <h3 className="text-lg font-medium text-slate-900">Sua carteira está vazia</h3>
-                            <p className="text-slate-500">Visite a aba "Empresas Parceiras" para resgatar descontos exclusivos.</p>
+                        <div className="col-span-full bg-white rounded-xl border-2 border-dashed border-slate-200 p-12 text-center">
+                            <ShoppingBag className="w-16 h-16 text-slate-200 mx-auto mb-4" />
+                            <h3 className="text-xl font-bold text-slate-900 mb-2">Sua carteira está vazia</h3>
+                            <p className="text-slate-500 max-w-md mx-auto mb-6">Explore as empresas parceiras e resgate cupons exclusivos para começar a economizar.</p>
+                            <button 
+                                onClick={() => setActiveTab('published')} // Isso não muda a view global, mas serve de dica visual
+                                className="px-6 py-2 bg-indigo-50 text-indigo-700 rounded-lg font-bold hover:bg-indigo-100 transition-colors"
+                            >
+                                Ver Empresas Parceiras
+                            </button>
                         </div>
                     )}
                 </div>
@@ -310,42 +330,48 @@ const MyCoupons: React.FC = () => {
       )}
 
       {/* QR CODE DISPLAY MODAL */}
-      {selectedQrCoupon && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-            <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center relative shadow-2xl transform transition-all">
-                <button 
-                    onClick={() => setSelectedQrCoupon(null)}
-                    className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 bg-slate-100 rounded-full p-1"
-                >
-                    <X className="w-6 h-6" />
-                </button>
-                
-                <div className="mb-4">
-                     <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Cupom de Desconto</p>
-                     <h3 className="text-xl font-bold text-slate-900 mt-1">{selectedQrCoupon.ownerData?.name || "Oferta"}</h3>
+      {selectedQrCoupon && currentUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-white rounded-3xl p-0 max-w-sm w-full text-center relative shadow-2xl overflow-hidden">
+                <div className="bg-slate-50 p-6 border-b border-slate-100 flex justify-between items-center">
+                     <div className="text-left">
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Validar Desconto</p>
+                        <h3 className="text-lg font-bold text-slate-900">{selectedQrCoupon.ownerData?.name}</h3>
+                     </div>
+                     <button 
+                        onClick={() => setSelectedQrCoupon(null)}
+                        className="text-slate-400 hover:text-slate-600 bg-white shadow-sm border border-slate-100 rounded-full p-2"
+                    >
+                        <X className="w-5 h-5" />
+                    </button>
                 </div>
 
-                <div className="bg-slate-50 p-4 rounded-xl border-2 border-dashed border-slate-200 mb-6">
-                    <p className="text-green-600 font-bold text-3xl mb-1">{selectedQrCoupon.discountValue}</p>
-                    <p className="font-mono text-slate-500 tracking-wider text-sm">{selectedQrCoupon.code}</p>
+                <div className="p-8 flex flex-col items-center">
+                    <div className="bg-white p-4 rounded-2xl border-2 border-slate-900 shadow-[0_0_40px_-10px_rgba(0,0,0,0.1)] mb-6">
+                        {/* 
+                           Gera QR Code usando API Externa. 
+                           Garantimos o encodeURIComponent para não quebrar a URL com caracteres especiais.
+                        */}
+                        <img 
+                            src={getQrCodeUrl(selectedQrCoupon.id, currentUser._id)}
+                            alt="QR Code" 
+                            className="w-48 h-48 mix-blend-multiply"
+                        />
+                    </div>
+
+                    <div className="mb-6 w-full bg-indigo-50 p-4 rounded-xl border border-indigo-100">
+                        <p className="text-xs text-indigo-600 uppercase font-bold mb-1">Valor do Desconto</p>
+                        <p className="text-3xl font-black text-indigo-900">{selectedQrCoupon.discountValue}</p>
+                    </div>
+                    
+                    <p className="text-sm text-slate-500 leading-relaxed px-2">
+                        Apresente este código ao parceiro para validar seu benefício instantaneamente.
+                    </p>
                 </div>
                 
-                <div className="bg-white p-2 rounded-xl border-2 border-slate-900 inline-block mb-6 shadow-xl">
-                    {/* 
-                       Gera QR Code usando API Externa. 
-                       Dados: ID_CUPOM : ID_USUARIO
-                       Isso permite que o scanner valide a posse.
-                    */}
-                    <img 
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&margin=10&data=${selectedQrCoupon.id}:${currentUser?._id}`}
-                        alt="QR Code" 
-                        className="w-48 h-48"
-                    />
+                <div className="bg-slate-50 p-4 text-xs text-slate-400 font-mono border-t border-slate-100">
+                    ID Transação: {selectedQrCoupon.id.substring(0,8)}...
                 </div>
-                
-                <p className="text-sm text-slate-600 px-4 leading-relaxed">
-                    Mostre este código ao lojista para validar e aplicar seu desconto na hora da compra.
-                </p>
             </div>
         </div>
       )}

@@ -126,13 +126,13 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser }) => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        {/* QUEM USOU MEUS CUPONS (NOVO PAINEL) */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex flex-col">
+        {/* PANEL 1: QUEM USOU MEUS CUPONS (Meu Histórico) */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex flex-col h-[400px]">
           <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center">
             <ShoppingBag className="w-5 h-5 mr-2 text-blue-600" />
             Últimos Resgates (Seus Clientes)
           </h2>
-          <div className="space-y-4 flex-1 overflow-y-auto max-h-[300px] pr-2 custom-scrollbar">
+          <div className="space-y-4 flex-1 overflow-y-auto pr-2 custom-scrollbar">
             {myRedemptions.length > 0 ? (
                 myRedemptions.map((redemption, idx) => (
                 <div key={idx} className="flex items-center justify-between py-3 border-b border-slate-50 last:border-0 hover:bg-slate-50 rounded-lg px-2 transition-colors">
@@ -143,20 +143,20 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser }) => {
                             ) : redemption.companyName.substring(0,2).toUpperCase()}
                         </div>
                         <div className="ml-3 min-w-0">
-                            <p className="text-sm font-bold text-slate-900 truncate">{redemption.companyName}</p>
+                            <p className="text-sm font-bold text-slate-900 truncate max-w-[120px]">{redemption.companyName}</p>
                             <p className="text-xs text-slate-500 flex items-center">
                                 <Ticket className="w-3 h-3 mr-1" /> {redemption.couponCode}
                             </p>
                         </div>
                     </div>
-                    <div className="text-right pl-2">
+                    <div className="text-right pl-2 shrink-0">
                          <p className="text-sm font-bold text-green-600">{redemption.discount}</p>
-                         <p className="text-[10px] text-slate-400">Resgatado</p>
+                         <p className="text-[10px] text-slate-400">Verificado</p>
                     </div>
                 </div>
                 ))
             ) : (
-                <div className="text-center py-10 flex flex-col items-center">
+                <div className="text-center py-10 flex flex-col items-center h-full justify-center">
                     <ShoppingBag className="w-10 h-10 text-slate-200 mb-2" />
                     <p className="text-slate-400 text-sm">Nenhum cliente utilizou seus cupons ainda.</p>
                 </div>
@@ -164,8 +164,45 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser }) => {
           </div>
         </div>
 
-        {/* Categories Distribution (MANTIDO) */}
-         <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl border border-slate-700 shadow-lg p-6 text-white">
+        {/* PANEL 2: NOVAS EMPRESAS (Global - Restaurado) */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex flex-col h-[400px]">
+           <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center">
+             <Building className="w-5 h-5 mr-2 text-indigo-600" />
+             Novas Empresas no Hub
+           </h2>
+           <div className="space-y-4 flex-1 overflow-y-auto pr-2 custom-scrollbar">
+             {displayStats.recentPartners.length > 0 ? (
+                displayStats.recentPartners.map((partner) => (
+                  <div key={partner._id} className="flex items-center justify-between py-3 border-b border-slate-50 last:border-0 hover:bg-slate-50 rounded-lg px-2 transition-colors">
+                      <div className="flex items-center overflow-hidden">
+                          <div className="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-500 font-bold text-xs shrink-0 overflow-hidden border border-indigo-100">
+                              {partner.Logo ? (
+                                  <img src={partner.Logo} alt="" className="w-full h-full object-cover" />
+                              ) : partner.Name.substring(0,2).toUpperCase()}
+                          </div>
+                          <div className="ml-3 min-w-0">
+                              <p className="text-sm font-bold text-slate-900 truncate max-w-[150px]">{partner.Name}</p>
+                              <p className="text-xs text-slate-500 truncate max-w-[150px]">{partner.Category}</p>
+                          </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                         <span className="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-1 rounded-full font-bold border border-indigo-100">Novo</span>
+                      </div>
+                  </div>
+                ))
+             ) : (
+                <div className="text-center py-10 flex flex-col items-center h-full justify-center">
+                    <Building className="w-10 h-10 text-slate-200 mb-2" />
+                    <p className="text-slate-400 text-sm">Nenhum parceiro recente.</p>
+                </div>
+             )}
+           </div>
+        </div>
+        
+      </div>
+
+      {/* PANEL 3: Categories Distribution */}
+      <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl border border-slate-700 shadow-lg p-6 text-white">
           <div className="flex justify-between items-start mb-6">
              <div>
               <h2 className="text-lg font-bold text-white">Categorias do Hub</h2>
@@ -196,8 +233,8 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser }) => {
                  <div className="text-center py-10 text-slate-500 italic">Sem dados de categorias.</div>
             )}
           </div>
-        </div>
       </div>
+
     </div>
   );
 };

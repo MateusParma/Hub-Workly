@@ -17,6 +17,7 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
+// Fixed: Use Component directly to ensure props are correctly typed and recognized
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = {
     hasError: false,

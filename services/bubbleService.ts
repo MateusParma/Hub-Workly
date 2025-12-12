@@ -146,24 +146,28 @@ const fetchWithFallback = async (targetUrl: string, signal?: AbortSignal, method
         if (method === 'PATCH' || method === 'POST' || method === 'DELETE') {
             const text = await response.text();
             // Bubble retorna vazio no 204 ou um JSON no 200/201
-            return text ? JSON.parse(text) : true;
+            return text ? JSON.parse(text) : { id: 'success_no_content' };
         }
         return await response.json();
     } else {
         const errText = await response.text();
         console.warn(`Bubble Error (${method} ${targetUrl}):`, response.status, errText);
+        // Retorna o erro para quem chamou poder tratar se necessário
+        return { error: true, status: response.status, message: errText };
     }
   } catch (e: any) {
     lastError = e;
     console.error("Fetch Error:", e);
   }
   
-  // Tentar Proxy se falhar (CORS) - Funciona principalmente para GET, mas tentamos para outros em desespero
-  try {
-    const proxy1 = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
-    const response = await fetch(proxy1, { ...options, method: method === 'GET' ? 'GET' : method }); // Proxy as vezes limita metodos, mas tentamos
-    if (response.ok) return await response.json();
-  } catch (e) { lastError = e; }
+  // Tentar Proxy se falhar (CORS) - Funciona principalmente para GET
+  if (method === 'GET') {
+      try {
+        const proxy1 = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+        const response = await fetch(proxy1, { ...options }); 
+        if (response.ok) return await response.json();
+      } catch (e) { lastError = e; }
+  }
 
   return null; 
 };
@@ -390,33 +394,47 @@ export const createCoupon = async (companyId: string, couponData: any): Promise<
         }
     }
 
-    // 2. Payload Robusto (Chaves PT e EN)
+    // 2. Payload Robusto (Chaves PT e EN e minúsculas)
+    // O Bubble cria campos customizados em minúsculas geralmente (ex: max_uses vs Max_Uses)
     const payload = {
-        // PT
+        // Campos padrão prováveis
         codigo: couponData.code,
         descricao: couponData.description,
         desconto: couponData.discountValue,
-        max_usos: Number(couponData.maxUses) || 0,
+        // Envia null se não for número válido para evitar erro de tipo no Bubble
+        max_usos: couponData.maxUses ? Number(couponData.maxUses) : null, 
         validade: isoDate,
         ativo: true,
         Dono: companyId,
         usos_atuais: 0,
         Utilizadores: [],
 
-        // EN/Variants
+        // English / PascalCase Variants
         Code: couponData.code,
         Description: couponData.description,
         Discount: couponData.discountValue,
-        Max_Uses: Number(couponData.maxUses) || 0,
+        Max_Uses: couponData.maxUses ? Number(couponData.maxUses) : null,
         Expiry_Date: isoDate,
         ExpiryDate: isoDate,
         Active: true,
         Owner: companyId,
         Current_Uses: 0,
-        Users: []
+        Users: [],
+
+        // Lowercase Variants (Comuns no Bubble)
+        code: couponData.code,
+        description: couponData.description,
+        discount: couponData.discountValue,
+        max_uses: couponData.maxUses ? Number(couponData.maxUses) : null,
+        expiry_date: isoDate,
+        owner: companyId,
+        current_uses: 0
     };
 
+    console.log("Enviando Payload Cupom:", payload);
+
     const result = await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom`, undefined, 'POST', payload);
+    
     if (result && result.id) {
         const newCouponId = result.id;
         try {
@@ -424,36 +442,43 @@ export const createCoupon = async (companyId: string, couponData: any): Promise<
             // Busca a empresa para pegar a lista atual
             const companyRaw = await fetchFromTableVariants(companyId, 'Empresa');
             
-            let listKey = '';
-            let currentCoupons = [];
-            
-            // Tenta identificar qual nome de coluna existe
-            const potentialKeys = ['Lista_cupons', 'Lista_Cupons', 'lista_cupons', 'Coupons'];
-            for (const key of potentialKeys) {
-                if (Array.isArray(companyRaw[key])) {
-                    listKey = key;
-                    currentCoupons = companyRaw[key];
-                    break;
+            if (companyRaw) {
+                let listKey = '';
+                let currentCoupons = [];
+                
+                // Tenta identificar qual nome de coluna existe
+                const potentialKeys = ['Lista_cupons', 'Lista_Cupons', 'lista_cupons', 'Coupons', 'coupons'];
+                for (const key of potentialKeys) {
+                    if (Array.isArray(companyRaw[key])) {
+                        listKey = key;
+                        currentCoupons = companyRaw[key];
+                        break;
+                    }
                 }
-            }
-            // Se não achou, assume padrão
-            if (!listKey) listKey = 'Lista_cupons';
+                // Se não achou, assume padrão
+                if (!listKey) listKey = 'Lista_cupons';
 
-            const newCouponsList = [...currentCoupons, newCouponId];
-            
-            // Tenta salvar com a chave detectada
-            await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${companyId}`, undefined, 'PATCH', { [listKey]: newCouponsList });
-            
-            // Tenta salvar com variações caso a detecção tenha falhado ou API seja case-sensitive estrita
-            if (listKey !== 'Lista_Cupons') {
-                 await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${companyId}`, undefined, 'PATCH', { ['Lista_Cupons']: newCouponsList });
-            }
-            if (listKey !== 'lista_cupons') {
-                 await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${companyId}`, undefined, 'PATCH', { ['lista_cupons']: newCouponsList });
+                const newCouponsList = [...currentCoupons, newCouponId];
+                
+                console.log(`Atualizando empresa ${companyId}, Key: ${listKey}, Nova Lista:`, newCouponsList);
+
+                // Tenta salvar com a chave detectada
+                await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${companyId}`, undefined, 'PATCH', { [listKey]: newCouponsList });
+                
+                // Tenta variações comuns de segurança
+                if (listKey !== 'Lista_Cupons') {
+                     await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${companyId}`, undefined, 'PATCH', { ['Lista_Cupons']: newCouponsList });
+                }
+            } else {
+                console.warn("Empresa não encontrada para vincular cupom.");
             }
 
-        } catch (err) {}
+        } catch (err) {
+            console.error("Erro ao vincular cupom na empresa:", err);
+        }
         return newCouponId;
+    } else {
+        console.error("Erro ao criar cupom. Resposta:", result);
     }
     return null;
 };

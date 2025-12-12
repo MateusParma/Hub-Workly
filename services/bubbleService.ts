@@ -37,24 +37,25 @@ const mapBubbleToCoupon = (item: any): Coupon => {
     };
 };
 
-// Mapeia os dados da tabela EMPRESA para nossa interface Company
+// Mapeia os dados (seja de User ou Empresa) para nossa interface Company
 const mapBubbleToCompany = (item: any): Company => {
   if (!item) return MOCK_COMPANIES[0];
   
   let generatedCoupons: Coupon[] = [];
   
-  // 1. Tenta ler a Lista_Cupons da tabela Empresa
-  if (Array.isArray(item['Lista_cupons']) || Array.isArray(item['Lista_Cupons'])) {
-      const rawList = item['Lista_cupons'] || item['Lista_Cupons'];
-      generatedCoupons = rawList.map((c: any) => {
+  // 1. Tenta ler a Lista_Cupons (Prioridade)
+  const listKey = item['Lista_cupons'] ? 'Lista_cupons' : 'Lista_Cupons';
+  
+  if (Array.isArray(item[listKey])) {
+      generatedCoupons = item[listKey].map((c: any) => {
           if (typeof c === 'object') return mapBubbleToCoupon(c);
           return null;
       }).filter((c): c is Coupon => c !== null);
   }
 
-  // 2. Fallback: Codigo Promocional antigo
+  // 2. Fallback: Codigo Promocional antigo (caso não tenha lista)
   if (generatedCoupons.length === 0) {
-      const promoCode = item['Codigo_Promocional'] || item['codigo_promocional'];
+      const promoCode = item['Codigo_Promocional'] || item['codigo_promocional'] || item['promocode'];
       if (promoCode) {
         generatedCoupons.push({
           id: `coupon-${item._id}`,
@@ -65,17 +66,18 @@ const mapBubbleToCompany = (item: any): Company => {
       }
   }
 
+  // Mapeamento Híbrido: Tenta campos da Tabela Empresa E da Tabela User
   return {
     _id: item._id,
-    Name: item['Nome da empresa'] || item['Nome'] || item['name'] || "Empresa Sem Nome",
-    Description: item['Descricao'] || item['descricao'] || "",
-    Logo: cleanImageUrl(item['Logo'] || item['logo'] || item['Logo_Capa']),
+    Name: item['Nome da empresa'] || item['Nome'] || item['name'] || item['Name'] || "Empresa Sem Nome",
+    Description: item['Descricao'] || item['descricao'] || item['Biografio'] || "",
+    Logo: cleanImageUrl(item['Logo'] || item['logo'] || item['Logo_Capa'] || item['Img_Perfil']),
     Category: item['Categoria'] || item['categoria'] || item['Setor de Atuação'] || "Parceiro", 
     Website: item['website'] || item['Website'] || item['Site'] || "",
-    Phone: item['Contato'] || item['contato'] || "",
+    Phone: item['Contato'] || item['contato'] || item['Telefone'] || "",
     Address: item['Morada'] || item['morada'] || item['Endereco'] || "",
     // @ts-ignore
-    Email: item['email'] || item['Email'] || "", 
+    Email: item['email'] || item['Email'] || item['authentication']?.email || "", 
     IsPartner: true, 
     Coupons: generatedCoupons
   };
@@ -87,7 +89,6 @@ const fetchWithFallback = async (targetUrl: string, signal?: AbortSignal, method
   if (body) options.body = JSON.stringify(body);
 
   try {
-    console.log(`[API] ${method} ${targetUrl}`);
     const response = await fetch(targetUrl, options);
     if (response.ok) {
         if (method === 'PATCH' || method === 'POST') return true;
@@ -97,7 +98,7 @@ const fetchWithFallback = async (targetUrl: string, signal?: AbortSignal, method
     lastError = e;
   }
   
-  // Tenta proxy apenas para GET
+  // Tenta proxy apenas para GET se falhar direto
   if (method === 'GET') {
       try {
         const proxy1 = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
@@ -106,7 +107,22 @@ const fetchWithFallback = async (targetUrl: string, signal?: AbortSignal, method
       } catch (e) { lastError = e; }
   }
 
-  return null; // Retorna null em vez de lançar erro para controlar o fluxo
+  return null; 
+};
+
+// Helper para buscar em possíveis nomes de tabela (Case Sensitive do Bubble)
+const fetchFromTableVariants = async (id: string, tableBaseName: string, signal?: AbortSignal) => {
+    const variants = [tableBaseName, tableBaseName.toLowerCase(), tableBaseName.charAt(0).toUpperCase() + tableBaseName.slice(1).toLowerCase()];
+    // Remove duplicatas
+    const uniqueVariants = [...new Set(variants)];
+
+    for (const tableName of uniqueVariants) {
+        const url = `${BUBBLE_API_ROOT}/${tableName}/${id}`;
+        console.log(`[API] Tentando buscar em ${tableName}...`);
+        const result = await fetchWithFallback(url, signal);
+        if (result && (result.response || result._id)) return result.response || result;
+    }
+    return null;
 };
 
 // Busca detalhes expandidos dos cupons se vierem apenas como IDs
@@ -114,13 +130,10 @@ const enrichCoupons = async (companyData: any, signal?: AbortSignal) => {
     const listKey = companyData['Lista_cupons'] ? 'Lista_cupons' : 'Lista_Cupons';
     
     if (companyData[listKey] && Array.isArray(companyData[listKey]) && typeof companyData[listKey][0] === 'string') {
-        console.log("[ID] Buscando detalhes dos cupons (ids)...");
         try {
             const couponIds = companyData[listKey];
             const couponPromises = couponIds.map((cId: string) => 
-                fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom/${cId}`, signal)
-                .then((res: any) => res?.response || res)
-                .catch(() => null)
+                fetchFromTableVariants(cId, 'Cupom', signal)
             );
             const couponsDetails = await Promise.all(couponPromises);
             companyData[listKey] = couponsDetails.filter((c: any) => c !== null);
@@ -139,26 +152,36 @@ export const fetchCompanyById = async (id: string): Promise<Company | null> => {
   const timeoutId = setTimeout(() => controller.abort(), 15000);
   
   let companyData = null;
-  let finalTableName = 'Empresa';
 
-  // 1. TENTA BUSCAR COMO SE O ID FOSSE DE UM USUÁRIO (User -> Empresa)
-  console.log(`[AUTH] Verificando se ID ${id} é um Usuário...`);
-  const userResponse = await fetchWithFallback(`${BUBBLE_API_ROOT}/User/${id}`, controller.signal);
-  const userObj = userResponse?.response || userResponse;
+  // 1. TENTATIVA: Buscar como USUÁRIO
+  console.log(`[AUTH] Buscando ID ${id} na tabela User...`);
+  const userObj = await fetchFromTableVariants(id, 'User', controller.signal);
 
-  if (userObj && userObj['empresa']) {
-      // É um usuário e tem uma empresa vinculada!
-      const empresaId = userObj['empresa'];
-      console.log(`[AUTH] Usuário encontrado. Redirecionando para Empresa ID: ${empresaId}`);
+  if (userObj) {
+      console.log(`[AUTH] Usuário encontrado.`);
+      // Verifica se tem link para empresa
+      const empresaId = userObj['empresa'] || userObj['Empresa'];
       
-      const empresaResponse = await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${empresaId}`, controller.signal);
-      companyData = empresaResponse?.response || empresaResponse;
+      if (empresaId) {
+          console.log(`[AUTH] Link 'empresa' encontrado (${empresaId}). Buscando dados da empresa...`);
+          // Se tiver link, busca a empresa vinculada
+          const empresaObj = await fetchFromTableVariants(empresaId, 'Empresa', controller.signal);
+          if (empresaObj) {
+              companyData = empresaObj;
+          } else {
+              console.warn(`[AUTH] Link existia mas empresa ${empresaId} não retornou dados. Usando dados do User.`);
+              companyData = userObj; // Fallback se o link estiver quebrado
+          }
+      } else {
+          console.log(`[AUTH] Usuário não tem campo 'empresa' vinculado. Usando o próprio User como empresa (Modo Legado).`);
+          // MODO LEGADO: O próprio User contém os dados (comportamento antigo)
+          companyData = userObj;
+      }
   } 
   else {
-      // Não é usuário ou não tem campo empresa. Tenta buscar direto na tabela Empresa (caso o ID passado já seja da empresa)
-      console.log(`[AUTH] ID não é User ou User sem empresa. Tentando buscar direto na tabela Empresa...`);
-      const empresaDirectResponse = await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${id}`, controller.signal);
-      companyData = empresaDirectResponse?.response || empresaDirectResponse;
+      // 2. TENTATIVA: Buscar direto como EMPRESA (caso o ID passado já seja da empresa)
+      console.log(`[AUTH] ID não encontrado em User. Tentando direto em Empresa...`);
+      companyData = await fetchFromTableVariants(id, 'Empresa', controller.signal);
   }
 
   if (companyData) {
@@ -172,20 +195,25 @@ export const fetchCompanyById = async (id: string): Promise<Company | null> => {
   return { 
       ...MOCK_COMPANIES[0], 
       _id: id, 
-      Name: "Erro: Empresa não encontrada", 
-      Description: "Verifique se o Usuário tem o campo 'empresa' preenchido no Bubble ou se o ID está correto." 
+      Name: "Erro: Não encontrada", 
+      Description: "Não foi possível localizar este ID nas tabelas 'User' ou 'Empresa'. Verifique as permissões de privacidade no Bubble." 
   };
 };
 
 export const fetchCompanies = async (): Promise<Company[]> => {
-    // Busca todas as empresas para o diretório
   const controller = new AbortController();
   try {
-      const url = `${BUBBLE_API_ROOT}/Empresa?t=${Date.now()}`; // Constraints podem ser adicionados aqui
-      const json = await fetchWithFallback(url, controller.signal);
+      // Tenta buscar na tabela Empresa primeiro
+      let url = `${BUBBLE_API_ROOT}/Empresa?t=${Date.now()}`;
+      let json = await fetchWithFallback(url, controller.signal);
       
+      if (!json || !json.response) {
+         // Fallback para tabela User se Empresa estiver vazia ou proibida
+         url = `${BUBBLE_API_ROOT}/User?t=${Date.now()}`;
+         json = await fetchWithFallback(url, controller.signal);
+      }
+
       if (json && json.response && json.response.results) {
-          // Mapeia resultados
           return json.response.results.map(mapBubbleToCompany);
       }
   } catch (error) {
@@ -198,21 +226,25 @@ export const updateCompany = async (id: string, data: Partial<Company>): Promise
   if (!id || id === 'mock' || id.includes('Erro')) return false;
 
   const payload: any = {};
-  // Mapeamento Inverso (App -> Bubble Table Empresa)
-  if (data.Name) payload['Nome da empresa'] = data.Name;
+  if (data.Name) payload['Nome da empresa'] = data.Name; // Tenta nome novo
+  if (data.Name) payload['Nome'] = data.Name; // Tenta nome antigo (User)
   if (data.Phone) payload['Contato'] = data.Phone;
   if (data.Website) payload['website'] = data.Website;
   if (data.Address) payload['morada'] = data.Address;
   if (data.Description) payload['Descricao'] = data.Description;
 
-  // Atualiza na tabela EMPRESA (garantido, pois o ID que temos no objeto Company agora É da empresa)
+  // Tenta atualizar onde der (User ou Empresa)
   try {
-      const url = `${BUBBLE_API_ROOT}/Empresa/${id}`;
-      console.log(`[UPDATE] Atualizando Empresa/${id}`, payload);
-      await fetchWithFallback(url, undefined, 'PATCH', payload);
+      // Tenta Empresa primeiro
+      await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${id}`, undefined, 'PATCH', payload);
       return true;
   } catch (e) {
-      console.warn(`[UPDATE] Falha ao atualizar empresa.`, e);
-      return false;
+      try {
+          // Se falhar (ex: 404), tenta User
+          await fetchWithFallback(`${BUBBLE_API_ROOT}/User/${id}`, undefined, 'PATCH', payload);
+          return true;
+      } catch (e2) {
+          return false;
+      }
   }
 };

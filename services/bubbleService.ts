@@ -496,51 +496,61 @@ export const deleteCoupon = async (couponId: string): Promise<boolean> => {
     } catch (e) { return false; }
 };
 
-export const claimCoupon = async (couponId: string, inputId: string, _knownUtilizadores: string[] = []): Promise<boolean> => {
-    try {
-        console.log("Iniciando resgate:", { couponId, inputId });
+// ==========================================================
+// FUNÇÕES DE CARTEIRA (Wallet Logic)
+// ==========================================================
 
-        // 1. UPDATE COUPON (Adiciona ID da empresa na lista de Utilizadores)
+// Função A: Adicionar à Carteira (Sem marcar como usado/queimado)
+export const addToWallet = async (couponId: string, companyId: string): Promise<boolean> => {
+    try {
+        // 1. UPDATE EMPRESA (Adiciona Cupom na carteira_cupons da empresa que está pegando)
+        const empresaRaw = await fetchFromTableVariants(companyId, 'Empresa');
+        if (empresaRaw) {
+             const currentCarteira = empresaRaw['carteira_cupons'] || [];
+             if (!currentCarteira.includes(couponId)) {
+                const newCarteira = [...currentCarteira, couponId];
+                await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${companyId}`, undefined, 'PATCH', { 
+                    "carteira_cupons": newCarteira 
+                });
+            }
+            return true;
+        }
+        return false;
+    } catch(e) {
+        console.error("Erro ao adicionar à carteira:", e);
+        return false;
+    }
+}
+
+// Função B: Registrar Uso (Queimar Cupom via Scanner)
+export const registerUsage = async (couponId: string, companyId: string): Promise<boolean> => {
+    try {
         const couponRaw = await fetchFromTableVariants(couponId, 'Cupom');
         if (!couponRaw) throw new Error("Cupom não encontrado");
 
         const currentUtilizadores = couponRaw['Utilizadores'] || [];
 
-        // Garante que inputId seja string e não nulo
-        if (inputId && !currentUtilizadores.includes(inputId)) {
-            const newUtilizadores = [...currentUtilizadores, inputId];
+        // Adiciona ID da empresa na lista de quem JÁ USOU o cupom
+        if (companyId && !currentUtilizadores.includes(companyId)) {
+            const newUtilizadores = [...currentUtilizadores, companyId];
             await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom/${couponId}`, undefined, 'PATCH', {
                 Utilizadores: newUtilizadores
             });
-        }
-
-        // 2. UPDATE EMPRESA (Adiciona Cupom na carteira_cupons)
-        const empresaRaw = await fetchFromTableVariants(inputId, 'Empresa');
-        if (empresaRaw) {
-             const currentCarteira = empresaRaw['carteira_cupons'] || [];
-             if (!currentCarteira.includes(couponId)) {
-                const newCarteira = [...currentCarteira, couponId];
-                await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${inputId}`, undefined, 'PATCH', { 
-                    "carteira_cupons": newCarteira 
-                });
-            }
             return true;
-        } else {
-            // Se não achou empresa, talvez seja user sem empresa vinculada (menos comum, mas ok)
-            // Tenta tabela User
-             const userRaw = await fetchFromTableVariants(inputId, 'User');
-             if(userRaw) {
-                // Tenta salvar no user (se tiver campo carteira_cupons no User, o que não foi mostrado na imagem mas pode existir)
-                // Se não, só o update do cupom (passo 1) já conta como 'uso'.
-                return true;
-             }
+        } else if (currentUtilizadores.includes(companyId)) {
+            // Já foi usado
+            return true;
         }
-
         return false;
-    } catch (e) {
-        console.error("Erro no fluxo de resgate:", e);
+    } catch(e) {
+        console.error("Erro ao registrar uso:", e);
         return false;
     }
+}
+
+// Mantido para compatibilidade, mas redireciona para addToWallet por padrão
+export const claimCoupon = async (couponId: string, inputId: string, _knownUtilizadores: string[] = []): Promise<boolean> => {
+    return addToWallet(couponId, inputId);
 }
 
 export const fetchClaimedCoupons = async (companyId: string): Promise<Coupon[]> => {
@@ -583,7 +593,6 @@ export const processQrCode = async (dataString: string, scannerOwnerId?: string)
             couponId = parts[0];
             clientId = parts[1];
         } else {
-            // Retorna o que foi lido para debug do usuário
             const preview = cleanData.length > 20 ? cleanData.substring(0, 20) + '...' : cleanData;
             return { 
                 valid: false, 
@@ -606,8 +615,13 @@ export const processQrCode = async (dataString: string, scannerOwnerId?: string)
 
         if (coupon.status !== 'active') return { valid: false, message: "Este cupom está pausado ou expirado." };
 
-        // 3. Registra Uso
-        const success = await claimCoupon(couponId, clientId);
+        // 3. Valida se JÁ FOI USADO pelo cliente
+        if (coupon.utilizadores?.includes(clientId)) {
+            return { valid: false, message: "Este cliente já utilizou este cupom anteriormente." };
+        }
+
+        // 4. Registra Uso (Queima o cupom)
+        const success = await registerUsage(couponId, clientId);
         
         if (success) {
             return { valid: true, message: `Sucesso! Uso registrado para o cliente.`, coupon };

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Ticket, Plus, Trash2, Edit, Loader2, Save, X, AlertCircle, ShoppingBag, Store, QrCode, ArrowRight, Download } from 'lucide-react';
+import { Ticket, Plus, Trash2, Edit, Loader2, Save, X, AlertCircle, ShoppingBag, Store, QrCode, ArrowRight, Download, CheckCircle, Clock } from 'lucide-react';
 import { Company, Coupon } from '../types';
 import { fetchCompanyById, createCoupon, updateCoupon, deleteCoupon, fetchClaimedCoupons } from '../services/bubbleService'; 
 
@@ -100,7 +100,6 @@ const MyCoupons: React.FC = () => {
         setShowCreateModal(false);
         await loadData();
     } catch (err: any) {
-        // Exibe a mensagem exata retornada pelo Bubble (Fallback)
         setErrorMsg(err.message || "Erro desconhecido ao salvar. Verifique o console.");
     } finally {
         setSaving(false);
@@ -124,8 +123,8 @@ const MyCoupons: React.FC = () => {
 
     // Background Gradient (Cinema Style Dark)
     const gradient = ctx.createLinearGradient(0, 0, width, height);
-    gradient.addColorStop(0, '#1e293b'); // slate-800
-    gradient.addColorStop(1, '#0f172a'); // slate-900
+    gradient.addColorStop(0, '#ea580c'); // orange-600
+    gradient.addColorStop(1, '#c2410c'); // orange-700
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
 
@@ -136,7 +135,7 @@ const MyCoupons: React.FC = () => {
     ctx.moveTo(stubX, 0);
     ctx.lineTo(stubX, height);
     ctx.lineWidth = 2;
-    ctx.strokeStyle = '#475569';
+    ctx.strokeStyle = '#ffffff';
     ctx.stroke();
 
     // Semi-circles (cutouts)
@@ -154,15 +153,15 @@ const MyCoupons: React.FC = () => {
     ctx.font = 'bold 30px Inter, sans-serif';
     ctx.fillText(coupon.ownerData?.name || 'Parceiro Workly', 40, 60);
 
-    ctx.fillStyle = '#60a5fa'; // Blue-400
+    ctx.fillStyle = '#ffedd5'; // Orange-100
     ctx.font = 'bold 16px Inter, sans-serif';
     ctx.fillText('CUPOM EXCLUSIVO', 40, 90);
 
-    ctx.fillStyle = '#f8fafc';
+    ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 60px Inter, sans-serif';
     ctx.fillText(coupon.discountValue, 40, 180);
 
-    ctx.fillStyle = '#94a3b8';
+    ctx.fillStyle = '#fed7aa'; // Orange-200
     ctx.font = '20px Inter, sans-serif';
     // Wrap description text
     const words = coupon.description.split(' ');
@@ -182,14 +181,10 @@ const MyCoupons: React.FC = () => {
     ctx.fillText(line, 40, y);
 
     // Code Box
-    ctx.fillStyle = '#334155';
-    ctx.fillRect(40, height - 80, 200, 50);
-    ctx.strokeStyle = '#475569';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([]);
-    ctx.strokeRect(40, height - 80, 200, 50);
-    
     ctx.fillStyle = '#ffffff';
+    ctx.fillRect(40, height - 80, 200, 50);
+    
+    ctx.fillStyle = '#c2410c';
     ctx.font = 'bold 24px monospace';
     ctx.textAlign = 'center';
     ctx.fillText(coupon.code, 140, height - 48);
@@ -206,7 +201,7 @@ const MyCoupons: React.FC = () => {
         // Draw QR on Stub
         ctx.drawImage(qrImg, stubX + 45, 80, 160, 160);
         
-        ctx.fillStyle = '#94a3b8';
+        ctx.fillStyle = '#ffffff';
         ctx.font = '12px Inter, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText('Apresente este QR', stubX + 125, 260);
@@ -219,6 +214,10 @@ const MyCoupons: React.FC = () => {
         link.click();
     };
   };
+
+  // Separação de Cupons: Disponíveis vs Usados
+  const availableCoupons = walletCoupons.filter(c => !c.utilizadores?.includes(currentUser?._id || ''));
+  const usedCoupons = walletCoupons.filter(c => c.utilizadores?.includes(currentUser?._id || ''));
 
   return (
     <div className="space-y-6">
@@ -233,7 +232,7 @@ const MyCoupons: React.FC = () => {
           <button
              onClick={() => setActiveTab('published')}
              className={`flex items-center px-4 py-2 text-sm font-bold rounded-lg transition-all ${
-                 activeTab === 'published' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'
+                 activeTab === 'published' ? 'bg-orange-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'
              }`}
           >
              <Store className="w-4 h-4 mr-2" />
@@ -242,7 +241,7 @@ const MyCoupons: React.FC = () => {
           <button
              onClick={() => setActiveTab('wallet')}
              className={`flex items-center px-4 py-2 text-sm font-bold rounded-lg transition-all ${
-                 activeTab === 'wallet' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'
+                 activeTab === 'wallet' ? 'bg-orange-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'
              }`}
           >
              <ShoppingBag className="w-4 h-4 mr-2" />
@@ -251,7 +250,7 @@ const MyCoupons: React.FC = () => {
       </div>
 
       {loading ? (
-           <div className="flex justify-center p-20"><Loader2 className="animate-spin text-blue-600 w-8 h-8" /></div>
+           <div className="flex justify-center p-20"><Loader2 className="animate-spin text-orange-600 w-8 h-8" /></div>
       ) : activeTab === 'published' ? (
         // --- ABA 1: MEUS CUPONS (CRIADOS) ---
         <div className="animate-fadeIn">
@@ -292,7 +291,7 @@ const MyCoupons: React.FC = () => {
                         <div className="text-xs text-slate-500 truncate max-w-[200px]">{coupon.description}</div>
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600">
-                        <span className="inline-flex items-center px-2 py-1 rounded bg-blue-50 text-blue-700 font-bold text-xs">
+                        <span className="inline-flex items-center px-2 py-1 rounded bg-orange-100 text-orange-800 font-bold text-xs">
                            <ShoppingBag className="w-3 h-3 mr-1" />
                            {coupon.uses || 0}
                         </span>
@@ -304,7 +303,7 @@ const MyCoupons: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end space-x-2">
-                          <button onClick={() => handleOpenEdit(coupon)} className="text-slate-400 hover:text-blue-600 p-2"><Edit className="w-4 h-4" /></button>
+                          <button onClick={() => handleOpenEdit(coupon)} className="text-slate-400 hover:text-orange-600 p-2"><Edit className="w-4 h-4" /></button>
                           <button onClick={() => handleDelete(coupon.id)} className="text-slate-400 hover:text-red-600 p-2"><Trash2 className="w-4 h-4" /></button>
                         </div>
                       </td>
@@ -325,88 +324,130 @@ const MyCoupons: React.FC = () => {
         </div>
       ) : (
         // --- ABA 2: MINHA CARTEIRA (RESGATADOS) ---
-        <div className="animate-fadeIn">
+        <div className="animate-fadeIn space-y-10">
             {loadingWallet ? (
                 <div className="flex justify-center p-20 bg-white rounded-xl border border-slate-200">
-                    <Loader2 className="animate-spin text-blue-600 w-8 h-8" />
+                    <Loader2 className="animate-spin text-orange-600 w-8 h-8" />
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {walletCoupons.length > 0 ? (
-                        walletCoupons.map((coupon) => (
-                            <div key={coupon.id} className="group relative bg-white rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden border border-slate-200 flex flex-col h-full transform hover:-translate-y-1">
-                                {/* Header Colorido com Logo */}
-                                <div className="h-28 bg-gradient-to-br from-slate-800 to-slate-900 relative p-6 flex flex-col justify-between">
-                                    <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
-                                    
-                                    <div className="flex justify-between items-start relative z-10">
-                                        <div className="w-12 h-12 bg-white rounded-lg p-0.5 shadow-lg overflow-hidden">
+                <>
+                {/* SEÇÃO 1: DISPONÍVEIS */}
+                <div>
+                    <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center">
+                        <Ticket className="w-5 h-5 mr-2 text-green-600" />
+                        Disponíveis para Uso
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {availableCoupons.length > 0 ? (
+                            availableCoupons.map((coupon) => (
+                                <div key={coupon.id} className="group relative bg-white rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden border border-slate-200 flex flex-col h-full transform hover:-translate-y-1">
+                                    {/* Header Colorido com Logo */}
+                                    <div className="h-28 bg-gradient-to-br from-orange-500 to-orange-600 relative p-6 flex flex-col justify-between">
+                                        <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
+                                        
+                                        <div className="flex justify-between items-start relative z-10">
+                                            <div className="w-12 h-12 bg-white rounded-lg p-0.5 shadow-lg overflow-hidden">
+                                                {coupon.ownerData?.logo ? (
+                                                    <img src={coupon.ownerData.logo} className="w-full h-full object-cover rounded-md" />
+                                                ) : (
+                                                    <div className="w-full h-full flex items-center justify-center bg-slate-100 font-bold text-slate-400 text-xs rounded-md">
+                                                        {coupon.ownerData?.name.substring(0,2)}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white/20 text-white backdrop-blur-md border border-white/10 uppercase tracking-wider">
+                                                Cupom Digital
+                                            </span>
+                                        </div>
+                                        <div className="relative z-10 mt-2">
+                                            <h4 className="text-white font-bold text-sm truncate">{coupon.ownerData?.name}</h4>
+                                        </div>
+                                    </div>
+
+                                    {/* Body */}
+                                    <div className="p-6 flex-1 flex flex-col">
+                                        <div className="mb-4">
+                                            <div className="text-3xl font-black text-slate-900 mb-2 tracking-tight">
+                                                {coupon.discountValue}
+                                            </div>
+                                            <p className="text-sm text-slate-500 leading-relaxed">
+                                                {coupon.description}
+                                            </p>
+                                        </div>
+
+                                        <div className="mt-auto pt-4 border-t border-slate-100 flex items-center justify-between gap-2">
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] text-slate-400 uppercase font-bold">Código</span>
+                                                <span className="font-mono font-bold text-slate-700">{coupon.code}</span>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => handleDownloadTicket(coupon)}
+                                                    className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors"
+                                                    title="Baixar Ticket"
+                                                >
+                                                    <Download className="w-4 h-4" />
+                                                </button>
+                                                <button 
+                                                    onClick={() => setSelectedQrCoupon(coupon)}
+                                                    className="flex items-center px-3 py-2 bg-orange-600 text-white rounded-lg text-sm font-bold hover:bg-orange-700 transition-colors shadow-md shadow-orange-200"
+                                                >
+                                                    <QrCode className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="col-span-full bg-white rounded-xl border-2 border-dashed border-slate-200 p-8 text-center">
+                                <p className="text-slate-400 text-sm">Você não tem cupons disponíveis para uso.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* SEÇÃO 2: RESGATADOS/USADOS */}
+                <div className="opacity-80 grayscale-[30%]">
+                    <h3 className="text-lg font-bold text-slate-700 mb-4 flex items-center">
+                        <CheckCircle className="w-5 h-5 mr-2 text-slate-400" />
+                        Histórico de Uso (Resgatados)
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {usedCoupons.length > 0 ? (
+                            usedCoupons.map((coupon) => (
+                                <div key={coupon.id} className="relative bg-slate-50 rounded-2xl border border-slate-200 flex flex-col h-full overflow-hidden">
+                                    <div className="absolute inset-0 bg-white/50 z-10 pointer-events-none"></div>
+                                    <div className="absolute z-20 top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 -rotate-12 border-4 border-red-500/50 text-red-500/50 font-black text-2xl uppercase p-2 rounded-lg">
+                                        UTILIZADO
+                                    </div>
+
+                                    <div className="p-6 flex items-start gap-4 opacity-50">
+                                         <div className="w-12 h-12 bg-white rounded-lg border border-slate-200 flex items-center justify-center shrink-0">
                                             {coupon.ownerData?.logo ? (
                                                 <img src={coupon.ownerData.logo} className="w-full h-full object-cover rounded-md" />
                                             ) : (
-                                                <div className="w-full h-full flex items-center justify-center bg-slate-100 font-bold text-slate-400 text-xs rounded-md">
-                                                    {coupon.ownerData?.name.substring(0,2)}
-                                                </div>
+                                                <span className="text-xs font-bold">{coupon.ownerData?.name.substring(0,2)}</span>
                                             )}
                                         </div>
-                                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white/20 text-white backdrop-blur-md border border-white/10 uppercase tracking-wider">
-                                            Cupom Digital
-                                        </span>
+                                        <div>
+                                            <h4 className="font-bold text-slate-900">{coupon.ownerData?.name}</h4>
+                                            <p className="text-xs text-slate-500">{coupon.description}</p>
+                                        </div>
                                     </div>
-                                    <div className="relative z-10 mt-2">
-                                        <h4 className="text-white font-bold text-sm truncate">{coupon.ownerData?.name}</h4>
+                                    <div className="mt-auto p-4 bg-slate-100 text-center text-xs text-slate-500 font-medium">
+                                        Cupom {coupon.code} já foi aplicado.
                                     </div>
                                 </div>
-
-                                {/* Body */}
-                                <div className="p-6 flex-1 flex flex-col">
-                                    <div className="mb-4">
-                                        <div className="text-3xl font-black text-slate-900 mb-2 tracking-tight">
-                                            {coupon.discountValue}
-                                        </div>
-                                        <p className="text-sm text-slate-500 leading-relaxed">
-                                            {coupon.description}
-                                        </p>
-                                    </div>
-
-                                    <div className="mt-auto pt-4 border-t border-slate-100 flex items-center justify-between gap-2">
-                                        <div className="flex flex-col">
-                                            <span className="text-[10px] text-slate-400 uppercase font-bold">Código</span>
-                                            <span className="font-mono font-bold text-slate-700">{coupon.code}</span>
-                                        </div>
-                                        <div className="flex gap-2">
-                                            <button
-                                                onClick={() => handleDownloadTicket(coupon)}
-                                                className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors"
-                                                title="Baixar Ticket"
-                                            >
-                                                <Download className="w-4 h-4" />
-                                            </button>
-                                            <button 
-                                                onClick={() => setSelectedQrCoupon(coupon)}
-                                                className="flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition-colors shadow-md shadow-blue-200"
-                                            >
-                                                <QrCode className="w-4 h-4" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
+                            ))
+                        ) : (
+                             <div className="col-span-full text-center py-4">
+                                <p className="text-slate-400 text-sm">Nenhum cupom foi utilizado ainda.</p>
                             </div>
-                        ))
-                    ) : (
-                        <div className="col-span-full bg-white rounded-xl border-2 border-dashed border-slate-200 p-16 text-center">
-                            <ShoppingBag className="w-16 h-16 text-slate-200 mx-auto mb-4" />
-                            <h3 className="text-xl font-bold text-slate-900 mb-2">Sua carteira está vazia</h3>
-                            <p className="text-slate-500 max-w-md mx-auto mb-6">Navegue pelos parceiros e resgate benefícios para eles aparecerem aqui.</p>
-                            <button 
-                                onClick={() => setActiveTab('published')} 
-                                className="px-6 py-2.5 bg-slate-100 text-slate-600 rounded-lg font-bold hover:bg-slate-200 transition-colors"
-                            >
-                                Voltar para Minhas Ofertas
-                            </button>
-                        </div>
-                    )}
+                        )}
+                    </div>
                 </div>
+                </>
             )}
         </div>
       )}
@@ -415,7 +456,7 @@ const MyCoupons: React.FC = () => {
       {selectedQrCoupon && currentUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-fadeIn">
             <div className="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl transform scale-100 transition-transform">
-                <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 text-center relative">
+                <div className="bg-gradient-to-r from-orange-500 to-orange-600 p-6 text-center relative">
                      <button 
                         onClick={() => setSelectedQrCoupon(null)}
                         className="absolute top-4 right-4 text-white/70 hover:text-white bg-white/10 rounded-full p-1"
@@ -423,7 +464,7 @@ const MyCoupons: React.FC = () => {
                         <X className="w-5 h-5" />
                     </button>
                     <h3 className="text-white font-bold text-lg mb-1">{selectedQrCoupon.ownerData?.name}</h3>
-                    <p className="text-blue-100 text-xs uppercase tracking-wider font-medium">Apresente no Caixa</p>
+                    <p className="text-orange-100 text-xs uppercase tracking-wider font-medium">Apresente no Caixa</p>
                 </div>
 
                 <div className="p-8 flex flex-col items-center bg-white relative">
@@ -496,7 +537,7 @@ const MyCoupons: React.FC = () => {
                     type="text" 
                     required
                     placeholder="Ex: PROMO10"
-                    className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 font-mono font-bold text-slate-700 uppercase"
+                    className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-orange-500 font-mono font-bold text-slate-700 uppercase"
                     value={formData.code}
                     onChange={(e) => setFormData({...formData, code: e.target.value.toUpperCase()})}
                   />
@@ -507,7 +548,7 @@ const MyCoupons: React.FC = () => {
                     type="text" 
                     required
                     placeholder="Ex: 15%"
-                    className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500"
+                    className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-orange-500"
                     value={formData.discountValue}
                     onChange={(e) => setFormData({...formData, discountValue: e.target.value})}
                   />
@@ -519,7 +560,7 @@ const MyCoupons: React.FC = () => {
                 <textarea 
                   required
                   placeholder="Regras de uso..."
-                  className="w-full border border-slate-300 rounded-lg p-2.5 h-20 resize-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-slate-300 rounded-lg p-2.5 h-20 resize-none focus:ring-2 focus:ring-orange-500"
                   value={formData.description}
                   onChange={(e) => setFormData({...formData, description: e.target.value})}
                 />

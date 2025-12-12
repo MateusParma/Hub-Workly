@@ -20,7 +20,8 @@ const QRScannerModal: React.FC<QRScannerModalProps> = ({ isOpen, onClose, curren
   const [hasTorch, setHasTorch] = useState(false);
   
   const scannerRef = useRef<Html5Qrcode | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null); // Input para Câmera Direta (Foto)
+  const galleryInputRef = useRef<HTMLInputElement>(null); // Input para Galeria (Arquivo)
 
   const startCamera = async () => {
       setCameraError(null);
@@ -171,6 +172,16 @@ const QRScannerModal: React.FC<QRScannerModalProps> = ({ isOpen, onClose, curren
           });
       } else {
           fileInputRef.current?.click();
+      }
+  };
+
+  const triggerGallery = () => {
+      if (isCameraActive) {
+          stopCamera().then(() => {
+              galleryInputRef.current?.click();
+          });
+      } else {
+          galleryInputRef.current?.click();
       }
   };
 
@@ -348,7 +359,7 @@ const QRScannerModal: React.FC<QRScannerModalProps> = ({ isOpen, onClose, curren
                             </button>
                             
                             <button 
-                                onClick={() => fileInputRef.current?.click()}
+                                onClick={triggerGallery}
                                 className="py-4 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold shadow-lg border border-slate-700 flex items-center justify-center transition-all text-sm"
                             >
                                 <ImageIcon className="w-5 h-5 mr-2 text-yellow-400" />
@@ -379,12 +390,21 @@ const QRScannerModal: React.FC<QRScannerModalProps> = ({ isOpen, onClose, curren
                         </div>
                     )}
 
-                    {/* Hidden Input for Capture/Upload */}
+                    {/* Hidden Input for Capture (Foto Instantânea) - Força Camera no Mobile */}
                     <input 
                         type="file" 
                         ref={fileInputRef}
                         accept="image/*" 
                         capture="environment"
+                        className="hidden" 
+                        onChange={handleFileUpload} 
+                    />
+                    
+                    {/* Hidden Input for Gallery (Arquivo) - Permite Escolher */}
+                    <input 
+                        type="file" 
+                        ref={galleryInputRef}
+                        accept="image/*" 
                         className="hidden" 
                         onChange={handleFileUpload} 
                     />

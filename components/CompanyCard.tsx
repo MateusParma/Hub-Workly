@@ -19,7 +19,7 @@ const CompanyCard: React.FC<CompanyCardProps> = ({ company, userIsPro, onOpenDet
         className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col h-full overflow-hidden group cursor-pointer"
     >
       {/* Card Header with Logo */}
-      <div className="h-24 bg-gradient-to-br from-slate-50 to-slate-100 relative border-b border-slate-100 group-hover:from-blue-50 group-hover:to-indigo-50 transition-colors">
+      <div className="h-24 bg-gradient-to-br from-slate-50 to-slate-100 relative border-b border-slate-100 group-hover:from-orange-50 group-hover:to-orange-100 transition-colors">
         <div className="absolute -bottom-6 left-6">
           <div className="h-16 w-16 rounded-xl border-4 border-white shadow-sm bg-white overflow-hidden">
             <img 
@@ -31,7 +31,7 @@ const CompanyCard: React.FC<CompanyCardProps> = ({ company, userIsPro, onOpenDet
         </div>
         <div className="absolute top-3 right-3 flex flex-col items-end gap-1">
             {company.IsPartner && (
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-white/80 backdrop-blur text-blue-800 shadow-sm border border-blue-100">
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-white/80 backdrop-blur text-orange-800 shadow-sm border border-orange-100">
                 Parceiro
             </span>
             )}
@@ -42,8 +42,8 @@ const CompanyCard: React.FC<CompanyCardProps> = ({ company, userIsPro, onOpenDet
       <div className="pt-8 px-6 pb-6 flex-1 flex flex-col">
         <div className="flex justify-between items-start mb-2">
           <div>
-            <h3 className="text-lg font-bold text-slate-900 line-clamp-1 group-hover:text-blue-600 transition-colors">{company.Name}</h3>
-            <p className="text-xs font-bold text-blue-500 uppercase tracking-wide mt-1">{company.Category}</p>
+            <h3 className="text-lg font-bold text-slate-900 line-clamp-1 group-hover:text-orange-600 transition-colors">{company.Name}</h3>
+            <p className="text-xs font-bold text-orange-500 uppercase tracking-wide mt-1">{company.Category}</p>
           </div>
         </div>
 
@@ -84,7 +84,7 @@ const CompanyCard: React.FC<CompanyCardProps> = ({ company, userIsPro, onOpenDet
         <div className="pt-4 border-t border-slate-100 mt-auto">
           {userIsPro ? (
               <button 
-                className="w-full flex items-center justify-center px-4 py-2.5 rounded-lg text-sm font-bold text-slate-700 bg-slate-50 group-hover:bg-blue-600 group-hover:text-white transition-all duration-300"
+                className="w-full flex items-center justify-center px-4 py-2.5 rounded-lg text-sm font-bold text-slate-700 bg-slate-50 group-hover:bg-orange-600 group-hover:text-white transition-all duration-300"
               >
                 Ver Perfil e Ofertas
                 <ArrowRight className="w-4 h-4 ml-2 opacity-0 group-hover:opacity-100 transition-opacity transform group-hover:translate-x-1" />

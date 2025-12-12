@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Company } from '../types';
 import { X, Check, Ticket, MapPin, Globe, Phone, Mail, ExternalLink, ArrowRight, Loader2 } from 'lucide-react';
-import { claimCoupon } from '../services/bubbleService';
+import { addToWallet } from '../services/bubbleService'; // Updated import
 
 interface CompanyDetailsModalProps {
   company: Company | null;
@@ -19,14 +19,15 @@ const CompanyDetailsModal: React.FC<CompanyDetailsModalProps> = ({ company, isOp
   const params = new URLSearchParams(window.location.search);
   const currentUserId = params.get('uid');
 
-  const handleClaim = async (couponId: string, currentUtilizadores: string[] = []) => {
+  const handleClaim = async (couponId: string) => {
       if (!currentUserId) {
           alert("Erro: ID da sua empresa não encontrado. Faça login novamente.");
           return;
       }
       setClaimingId(couponId);
       
-      const success = await claimCoupon(couponId, currentUserId, currentUtilizadores);
+      // Agora chamamos addToWallet (apenas vincula, não usa)
+      const success = await addToWallet(couponId, currentUserId);
       
       if (success) {
           setLocalClaimed(prev => [...prev, couponId]);
@@ -52,8 +53,8 @@ const CompanyDetailsModal: React.FC<CompanyDetailsModalProps> = ({ company, isOp
 
         <div className="relative inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full animate-fadeIn">
           
-          {/* Header Banner */}
-          <div className="h-32 bg-gradient-to-r from-blue-900 to-indigo-800 relative">
+          {/* Header Banner - Orange Gradient */}
+          <div className="h-32 bg-gradient-to-r from-orange-600 to-orange-500 relative">
              <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
              <button 
                 className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 text-white p-2 rounded-full transition-colors z-10 backdrop-blur-md"
@@ -76,7 +77,7 @@ const CompanyDetailsModal: React.FC<CompanyDetailsModalProps> = ({ company, isOp
                 <div className="flex-1 pb-1">
                     <div className="flex flex-wrap items-center gap-2 mb-2">
                         {company.IsPartner && (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700 border border-blue-200">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-orange-100 text-orange-700 border border-orange-200">
                                 Parceiro Verificado
                             </span>
                         )}
@@ -100,9 +101,9 @@ const CompanyDetailsModal: React.FC<CompanyDetailsModalProps> = ({ company, isOp
                      
                      <div className="space-y-3 pt-4 border-t border-slate-100">
                         {company.Website && (
-                            <a href={company.Website} target="_blank" rel="noreferrer" className="flex items-center text-sm text-slate-600 hover:text-blue-600 transition-colors group">
-                                <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center mr-3 group-hover:bg-blue-50">
-                                    <Globe className="w-4 h-4 text-slate-400 group-hover:text-blue-500" />
+                            <a href={company.Website} target="_blank" rel="noreferrer" className="flex items-center text-sm text-slate-600 hover:text-orange-600 transition-colors group">
+                                <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center mr-3 group-hover:bg-orange-50">
+                                    <Globe className="w-4 h-4 text-slate-400 group-hover:text-orange-500" />
                                 </div>
                                 <span className="truncate flex-1">Website Oficial</span>
                                 <ExternalLink className="w-3 h-3 opacity-50"/>
@@ -138,24 +139,29 @@ const CompanyDetailsModal: React.FC<CompanyDetailsModalProps> = ({ company, isOp
                  {/* Coluna Direita: Lista de Tickets (Cupons) */}
                  <div className="lg:col-span-7 bg-slate-50 rounded-2xl p-6 border border-slate-100">
                     <div className="flex items-center mb-6">
-                        <Ticket className="w-5 h-5 text-blue-600 mr-2" />
+                        <Ticket className="w-5 h-5 text-orange-600 mr-2" />
                         <h3 className="text-lg font-bold text-slate-900">Benefícios & Ofertas</h3>
                     </div>
 
                     {hasCoupons ? (
                         <div className="space-y-4">
                             {company.Coupons?.filter(c => c.status !== 'paused').map((coupon) => {
-                                const isAlreadyClaimed = (currentUserId && coupon.utilizadores?.includes(currentUserId)) || localClaimed.includes(coupon.id);
+                                // Verifica se já está na carteira (pelo carteira_cupons da Company ou estado local)
+                                // NOTA: Aqui não verificamos se foi USADO, apenas se foi PEGO.
+                                // Como não temos o objeto Company completo do usuário logado aqui,
+                                // baseamos no localClaimed ou se tivéssemos a prop currentUser.
+                                // Para simplificar visualmente nesta view pública:
+                                const isAlreadyClaimed = localClaimed.includes(coupon.id);
                                 
                                 return (
                                     <div key={coupon.id} className="relative flex flex-col sm:flex-row bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow group">
                                         {/* Detalhe Decorativo Lateral */}
-                                        <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b from-blue-500 to-indigo-600"></div>
+                                        <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b from-orange-500 to-orange-600"></div>
                                         
                                         {/* Left Side: Valor */}
                                         <div className="p-5 flex flex-col justify-center items-center text-center sm:w-32 bg-slate-50 border-b sm:border-b-0 sm:border-r border-dashed border-slate-300 relative">
                                              {/* Círculos recortados para efeito de ticket */}
-                                            <div className="absolute -left-2 top-1/2 -mt-2 w-4 h-4 bg-slate-50 rounded-full"></div> {/* Hack visual simples */}
+                                            <div className="absolute -left-2 top-1/2 -mt-2 w-4 h-4 bg-slate-50 rounded-full"></div> 
                                             <div className="absolute -right-2 top-1/2 -mt-2 w-4 h-4 bg-slate-50 rounded-full border border-slate-200 z-10 hidden sm:block"></div>
                                             
                                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">OFF</span>
@@ -182,7 +188,7 @@ const CompanyDetailsModal: React.FC<CompanyDetailsModalProps> = ({ company, isOp
                                                     </button>
                                                 ) : (
                                                     <button
-                                                        onClick={() => handleClaim(coupon.id, coupon.utilizadores || [])}
+                                                        onClick={() => handleClaim(coupon.id)}
                                                         disabled={claimingId === coupon.id || !currentUserId}
                                                         className="w-full sm:w-auto flex items-center justify-center px-6 py-2.5 bg-slate-900 text-white hover:bg-slate-800 rounded-lg font-bold text-sm transition-all active:scale-95 shadow-lg shadow-slate-900/10"
                                                     >

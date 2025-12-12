@@ -20,7 +20,11 @@ const MOCK_COMPANIES: Company[] = [
 
 const cleanImageUrl = (url?: string) => {
   if (!url) return "";
-  return url.startsWith('//') ? `https:${url}` : url;
+  // Bubble as vezes retorna //s3.amazonaws.com... sem o https:
+  if (url.startsWith('//')) return `https:${url}`;
+  // Se já vier com http, mantem
+  if (url.startsWith('http')) return url;
+  return url;
 };
 
 // Mapeia um objeto Cupom do Bubble para nossa interface Coupon
@@ -40,10 +44,14 @@ const mapBubbleToCoupon = (item: any): Coupon => {
 // Mapeia os dados (seja de User ou Empresa) para nossa interface Company
 const mapBubbleToCompany = (item: any): Company => {
   if (!item) return MOCK_COMPANIES[0];
+
+  // LOG DE DEBUG: Verifique no Console do navegador o que está chegando
+  console.log("🛠️ DADOS BRUTOS DO BUBBLE:", item);
   
   let generatedCoupons: Coupon[] = [];
   
   // 1. Tenta ler a Lista_Cupons (Prioridade)
+  // O Bubble pode retornar Case Sensitive, tentamos variantes
   const listKey = item['Lista_cupons'] ? 'Lista_cupons' : 'Lista_Cupons';
   
   if (Array.isArray(item[listKey])) {
@@ -53,31 +61,45 @@ const mapBubbleToCompany = (item: any): Company => {
       }).filter((c): c is Coupon => c !== null);
   }
 
-  // 2. Fallback: Codigo Promocional antigo (caso não tenha lista)
-  if (generatedCoupons.length === 0) {
-      const promoCode = item['Codigo_Promocional'] || item['codigo_promocional'] || item['promocode'];
-      if (promoCode) {
-        generatedCoupons.push({
-          id: `coupon-${item._id}`,
-          code: promoCode,
-          description: 'Desconto Parceiro',
-          discountValue: 'Verificar'
-        });
+  // Tratamento da Categoria (Pode vir como Lista de textos ou Texto único)
+  let category = "Parceiro";
+  const rawCategory = item['Setor de Atuação'] || item['Categoria'] || item['categoria'];
+  if (rawCategory) {
+      if (Array.isArray(rawCategory)) {
+          category = rawCategory.join(', ');
+      } else {
+          category = String(rawCategory);
       }
   }
 
-  // Mapeamento Híbrido: Tenta campos da Tabela Empresa E da Tabela User
+  // Mapeamento EXATO baseado nas suas imagens do Bubble Editor
   return {
     _id: item._id,
-    Name: item['Nome da empresa'] || item['Nome'] || item['name'] || item['Name'] || "Empresa Sem Nome",
-    Description: item['Descricao'] || item['descricao'] || item['Biografio'] || "",
-    Logo: cleanImageUrl(item['Logo'] || item['logo'] || item['Logo_Capa'] || item['Img_Perfil']),
-    Category: item['Categoria'] || item['categoria'] || item['Setor de Atuação'] || "Parceiro", 
+    
+    // Campo: Nome da empresa (text)
+    Name: item['Nome da empresa'] || item['Nome'] || item['name'] || "Empresa Sem Nome",
+    
+    // Campo: Descricao (text)
+    Description: item['Descricao'] || item['descricao'] || "",
+    
+    // Campo: Logo (image) - aplica cleaner para adicionar https:
+    Logo: cleanImageUrl(item['Logo'] || item['logo'] || item['Logo_Capa']),
+    
+    // Campo: Setor de Atuação (list of text/categories)
+    Category: category, 
+    
+    // Campo: website (text) - nota minúscula na imagem
     Website: item['website'] || item['Website'] || item['Site'] || "",
+    
+    // Campo: Contato (text)
     Phone: item['Contato'] || item['contato'] || item['Telefone'] || "",
+    
+    // Campo: Morada (text)
     Address: item['Morada'] || item['morada'] || item['Endereco'] || "",
-    // @ts-ignore
-    Email: item['email'] || item['Email'] || item['authentication']?.email || "", 
+    
+    // @ts-ignore - Email geralmente fica no User, mas tentamos pegar se existir na empresa
+    Email: item['email'] || item['Email'] || item['Email_Candidatos'] || "", 
+    
     IsPartner: true, 
     Coupons: generatedCoupons
   };
@@ -92,7 +114,6 @@ const fetchWithFallback = async (targetUrl: string, signal?: AbortSignal, method
     const response = await fetch(targetUrl, options);
     if (response.ok) {
         if (method === 'PATCH' || method === 'POST' || method === 'DELETE') {
-            // Se tiver conteúdo JSON, retorna, senão true
             const text = await response.text();
             return text ? JSON.parse(text) : true;
         }
@@ -103,7 +124,7 @@ const fetchWithFallback = async (targetUrl: string, signal?: AbortSignal, method
     console.warn("Fetch Error:", e);
   }
   
-  // Tenta proxy apenas para GET se falhar direto
+  // Proxy fallback apenas para GET
   if (method === 'GET') {
       try {
         const proxy1 = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
@@ -115,7 +136,7 @@ const fetchWithFallback = async (targetUrl: string, signal?: AbortSignal, method
   return null; 
 };
 
-// Helper para buscar em possíveis nomes de tabela (Case Sensitive do Bubble)
+// Helper para buscar em possíveis nomes de tabela
 const fetchFromTableVariants = async (id: string, tableBaseName: string, signal?: AbortSignal) => {
     const variants = [tableBaseName, tableBaseName.toLowerCase(), tableBaseName.charAt(0).toUpperCase() + tableBaseName.slice(1).toLowerCase()];
     const uniqueVariants = [...new Set(variants)];
@@ -128,7 +149,7 @@ const fetchFromTableVariants = async (id: string, tableBaseName: string, signal?
     return null;
 };
 
-// Busca detalhes expandidos dos cupons se vierem apenas como IDs
+// Busca detalhes expandidos dos cupons
 const enrichCoupons = async (companyData: any, signal?: AbortSignal) => {
     const listKey = companyData['Lista_cupons'] ? 'Lista_cupons' : 'Lista_Cupons';
     
@@ -156,28 +177,36 @@ export const fetchCompanyById = async (id: string): Promise<Company | null> => {
   
   let companyData = null;
 
-  // 1. TENTATIVA: Buscar como USUÁRIO
+  // 1. TENTATIVA: Buscar como USUÁRIO (caso o ID passado seja de user)
   const userObj = await fetchFromTableVariants(id, 'User', controller.signal);
 
   if (userObj) {
-      // Verifica se tem link para empresa
+      // Se encontrou user, verifica se tem link para empresa
       const empresaId = userObj['empresa'] || userObj['Empresa'];
       
       if (empresaId) {
-          // Se tiver link, busca a empresa vinculada
+          console.log("Encontrado User, buscando empresa vinculada:", empresaId);
           const empresaObj = await fetchFromTableVariants(empresaId, 'Empresa', controller.signal);
           if (empresaObj) {
               companyData = empresaObj;
           } else {
-              companyData = userObj; // Fallback se o link estiver quebrado
+              companyData = userObj; 
           }
       } else {
-          // MODO LEGADO: O próprio User contém os dados
-          companyData = userObj;
+          // Se o ID passado já for da Empresa, o endpoint User pode retornar erro ou vazio, ou o proprio dado se for unificado
+          // Se falhou user ou não tem empresa vinculada, tentamos buscar direto na tabela Empresa com esse ID
+          if (!userObj['authentication']) {
+             // Provavelmente é um ID de empresa que retornou algo genérico
+             const directCompany = await fetchFromTableVariants(id, 'Empresa', controller.signal);
+             companyData = directCompany || userObj;
+          } else {
+             companyData = userObj;
+          }
       }
   } 
   else {
       // 2. TENTATIVA: Buscar direto como EMPRESA
+      console.log("User não encontrado, buscando direto na tabela Empresa...");
       companyData = await fetchFromTableVariants(id, 'Empresa', controller.signal);
   }
 
@@ -192,7 +221,7 @@ export const fetchCompanyById = async (id: string): Promise<Company | null> => {
       ...MOCK_COMPANIES[0], 
       _id: id, 
       Name: "Erro: Não encontrada", 
-      Description: "Não foi possível localizar este ID nas tabelas 'User' ou 'Empresa'." 
+      Description: "Não foi possível localizar este ID nas tabelas 'User' ou 'Empresa'. Verifique as Privacy Rules." 
   };
 };
 
@@ -202,7 +231,8 @@ export const fetchCompanies = async (): Promise<Company[]> => {
       let url = `${BUBBLE_API_ROOT}/Empresa?t=${Date.now()}`;
       let json = await fetchWithFallback(url, controller.signal);
       
-      if (!json || !json.response) {
+      // Fallback para User se Empresa estiver vazia
+      if (!json || !json.response || json.response.results.length === 0) {
          url = `${BUBBLE_API_ROOT}/User?t=${Date.now()}`;
          json = await fetchWithFallback(url, controller.signal);
       }
@@ -221,12 +251,11 @@ export const updateCompany = async (id: string, data: Partial<Company>): Promise
 
   const payload: any = {};
   
-  // Mapeamento exato para os campos do Bubble (Case Sensitive)
-  // Baseado no mapBubbleToCompany, estes são os campos mais prováveis
+  // Mapeamento Inverso: React -> Bubble (Deve bater com o banco)
   if (data.Name) payload['Nome da empresa'] = data.Name;
   if (data.Phone) payload['Contato'] = data.Phone;
   if (data.Website) payload['website'] = data.Website;
-  if (data.Address) payload['morada'] = data.Address;
+  if (data.Address) payload['Morada'] = data.Address; // Capitalized 'Morada' baseado na imagem 2
   if (data.Description) payload['Descricao'] = data.Description;
   
   // Campo de Logo
@@ -238,27 +267,14 @@ export const updateCompany = async (id: string, data: Partial<Company>): Promise
       await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${id}`, undefined, 'PATCH', payload);
       return true;
   } catch (e) {
-      console.warn("Falha ao atualizar tabela Empresa, tentando User...");
-      try {
-          // Fallback para tabela User caso a estrutura seja antiga
-          const userPayload: any = {};
-          if (data.Name) userPayload['Nome'] = data.Name;
-          if (data.Phone) userPayload['Telefone'] = data.Phone;
-          if (data.Logo) userPayload['Img_Perfil'] = data.Logo;
-          // ... outros campos ...
-          
-          await fetchWithFallback(`${BUBBLE_API_ROOT}/User/${id}`, undefined, 'PATCH', payload);
-          return true;
-      } catch (e2) {
-          return false;
-      }
+      console.warn("Falha ao atualizar tabela Empresa.");
+      return false;
   }
 };
 
 // --- FUNÇÕES DE CUPOM ---
 
 export const createCoupon = async (companyId: string, couponData: any): Promise<string | null> => {
-    // 1. Cria o Cupom
     const payload = {
         codigo: couponData.code,
         descricao: couponData.description,
@@ -266,7 +282,7 @@ export const createCoupon = async (companyId: string, couponData: any): Promise<
         max_usos: Number(couponData.maxUses) || 0,
         validade: couponData.expiryDate,
         ativo: true,
-        Dono: companyId // Tenta vincular diretamente se o Bubble permitir
+        Dono: companyId 
     };
 
     console.log("Criando cupom...", payload);
@@ -274,11 +290,6 @@ export const createCoupon = async (companyId: string, couponData: any): Promise<
     
     if (result && result.id) {
         const newCouponId = result.id;
-        
-        // 2. Atualiza a lista da empresa (Isso é crucial no Bubble se não tiver Backend Workflow automático)
-        // Precisamos ler a lista atual primeiro para não sobrescrever? 
-        // A API 'PATCH' do Bubble substitui arrays. O ideal é usar o endpoint específico de lista se existir, 
-        // mas aqui vamos fazer: Ler -> Adicionar -> Salvar
         try {
             const company = await fetchCompanyById(companyId);
             const currentCoupons = company?.Coupons?.map(c => c.id) || [];
@@ -288,9 +299,8 @@ export const createCoupon = async (companyId: string, couponData: any): Promise<
                 "Lista_cupons": newCouponsList
             });
         } catch (err) {
-            console.warn("Cupom criado, mas falha ao vincular na lista da empresa. Verifique se o campo 'Dono' resolveu.", err);
+            console.warn("Cupom criado, erro ao vincular na lista.", err);
         }
-        
         return newCouponId;
     }
     return null;
@@ -310,7 +320,6 @@ export const updateCoupon = async (couponId: string, couponData: any): Promise<b
 };
 
 export const deleteCoupon = async (couponId: string): Promise<boolean> => {
-    // No Bubble, geralmente deletamos o objeto
     const result = await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom/${couponId}`, undefined, 'DELETE');
     return !!result;
 };

@@ -31,11 +31,11 @@ export interface Company {
   Website?: string;
   Phone?: string;
   Address?: string;
-  Email?: string; // Pode vir do User vinculado ou da empresa se tiver campo
+  Email?: string; 
   IsPartner: boolean;
-  Coupons?: Coupon[]; // Lista de cupons da tabela Empresa
-  CreatedDate?: string; // Data de criação para ordenação
-  carteira_cupons?: string[]; // LISTA DE CUPONS QUE EU RESGATEI
+  Coupons?: Coupon[]; // Lista de cupons CRIADOS pela empresa
+  CreatedDate?: string; 
+  carteira_cupons?: string[]; // LISTA DE CUPONS QUE EU RESGATEI (Campo: carteira_cupons)
 }
 
 export interface DashboardStats {

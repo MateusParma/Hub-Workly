@@ -31,6 +31,8 @@ const mapBubbleToCoupon = (item: any): Coupon => {
     let utilizadoresList: string[] = [];
     if (Array.isArray(item['Utilizadores'])) {
         utilizadoresList = item['Utilizadores'];
+    } else if (Array.isArray(item['utilizadores'])) {
+        utilizadoresList = item['utilizadores'];
     }
 
     return {
@@ -61,7 +63,7 @@ const mapBubbleToCompany = (item: any, categoryMap: Record<string, string> = {},
       }).filter((c): c is Coupon => c !== null);
   }
 
-  // Fallback para cupons
+  // Fallback para cupons se não vierem aninhados
   if (generatedCoupons.length === 0 && extraCoupons.length > 0) {
       const ownedCoupons = extraCoupons.filter(c => c.Dono === item._id);
       if (ownedCoupons.length > 0) {
@@ -76,10 +78,13 @@ const mapBubbleToCompany = (item: any, categoryMap: Record<string, string> = {},
 
   // Mapear Carteira de Cupons (Resgatados) - Campo na tabela Empresa
   let carteiraList: string[] = [];
+  // Tenta variações de nome do campo (case sensitive do Bubble pode variar)
   if (Array.isArray(item['carteira_cupons'])) {
       carteiraList = item['carteira_cupons'];
   } else if (Array.isArray(item['Carteira_Cupons'])) {
       carteiraList = item['Carteira_Cupons'];
+  } else if (Array.isArray(item['Carteira_cupons'])) {
+      carteiraList = item['Carteira_cupons'];
   }
 
   // Lógica de Categoria
@@ -132,14 +137,20 @@ const fetchWithFallback = async (targetUrl: string, signal?: AbortSignal, method
     if (response.ok) {
         if (method === 'PATCH' || method === 'POST' || method === 'DELETE') {
             const text = await response.text();
+            // Bubble retorna vazio no 204 ou um JSON no 200/201
             return text ? JSON.parse(text) : true;
         }
         return await response.json();
+    } else {
+        const errText = await response.text();
+        console.warn(`Bubble Error (${method} ${targetUrl}):`, response.status, errText);
     }
   } catch (e: any) {
     lastError = e;
+    console.error("Fetch Error:", e);
   }
   
+  // Tentar Proxy apenas para GET se falhar (CORS)
   if (method === 'GET') {
       try {
         const proxy1 = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
@@ -150,8 +161,6 @@ const fetchWithFallback = async (targetUrl: string, signal?: AbortSignal, method
   return null; 
 };
 
-// ... (fetchCategoriesMap, fetchFromTableVariants, enrichCoupons - MANTIDOS IGUAIS) ...
-// Busca auxiliar para mapear IDs de Categoria -> Titulo
 const fetchCategoriesMap = async (): Promise<Record<string, string>> => {
     const map: Record<string, string> = {};
     try {
@@ -206,35 +215,36 @@ export const fetchCompanyById = async (id: string): Promise<Company | null> => {
   if (id === 'mock_user') return { ...MOCK_COMPANIES[0], _id: 'mock', Name: "Modo Teste" };
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
   
   let companyData = null;
-  const userObj = await fetchFromTableVariants(id, 'User', controller.signal);
+  // Tenta buscar direto na tabela Empresa primeiro, pois é onde os dados principais residem
+  const empresaObj = await fetchFromTableVariants(id, 'Empresa', controller.signal);
 
-  if (userObj) {
-      const empresaId = userObj['empresa'] || userObj['Empresa'];
-      if (empresaId) {
-          const empresaObj = await fetchFromTableVariants(empresaId, 'Empresa', controller.signal);
-          companyData = empresaObj || userObj;
-      } else {
-          companyData = userObj['authentication'] ? userObj : (await fetchFromTableVariants(id, 'Empresa', controller.signal) || userObj);
-      }
+  if (empresaObj) {
+      companyData = empresaObj;
   } else {
-      companyData = await fetchFromTableVariants(id, 'Empresa', controller.signal);
+      // Se não achou na Empresa, tenta no User e vê se tem vinculo
+      const userObj = await fetchFromTableVariants(id, 'User', controller.signal);
+      if (userObj) {
+        const empresaId = userObj['empresa'] || userObj['Empresa'];
+        if (empresaId) {
+             const linkedEmpresa = await fetchFromTableVariants(empresaId, 'Empresa', controller.signal);
+             companyData = linkedEmpresa || userObj;
+        } else {
+             companyData = userObj;
+        }
+      }
   }
 
   if (companyData) {
       companyData = await enrichCoupons(companyData, controller.signal);
       const categoryMap = await fetchCategoriesMap(); 
-      clearTimeout(timeoutId);
       return mapBubbleToCompany(companyData, categoryMap);
   }
 
-  clearTimeout(timeoutId);
   return null;
 };
 
-// ... (fetchCompanies, fetchDashboardStats, updateCompany, createCoupon, updateCoupon, deleteCoupon - MANTIDOS IGUAIS) ...
 export const fetchCompanies = async (): Promise<Company[]> => {
   const controller = new AbortController();
   try {
@@ -318,10 +328,16 @@ export const createCoupon = async (companyId: string, couponData: any): Promise<
     if (result && result.id) {
         const newCouponId = result.id;
         try {
-            const company = await fetchCompanyById(companyId); 
-            const currentCoupons = company?.Coupons?.map(c => c.id) || [];
+            // Recarrega a empresa para pegar lista atualizada antes de dar push
+            const companyRaw = await fetchFromTableVariants(companyId, 'Empresa');
+            let currentCoupons = [];
+            const listKey = companyRaw['Lista_cupons'] ? 'Lista_cupons' : 'Lista_Cupons';
+            if (companyRaw[listKey] && Array.isArray(companyRaw[listKey])) {
+                currentCoupons = companyRaw[listKey];
+            }
+            
             const newCouponsList = [...currentCoupons, newCouponId];
-            await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${companyId}`, undefined, 'PATCH', { "Lista_cupons": newCouponsList });
+            await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${companyId}`, undefined, 'PATCH', { [listKey]: newCouponsList });
         } catch (err) {}
         return newCouponId;
     }
@@ -345,66 +361,93 @@ export const deleteCoupon = async (couponId: string): Promise<boolean> => {
     return !!result;
 };
 
-// --- LOGICA REFINADA DE RESGATE E CARTEIRA ---
+// --- LOGICA REFINADA DE RESGATE E CARTEIRA (CORRIGIDA) ---
 
-// 1. Resgatar Cupom (Vincula Coupon->Empresa e Empresa->Coupon)
-export const claimCoupon = async (couponId: string, companyId: string, currentUtilizadores: string[]): Promise<boolean> => {
-    // Verificação de segurança
-    if (currentUtilizadores.includes(companyId)) return true;
-
+export const claimCoupon = async (couponId: string, companyId: string, _knownUtilizadores: string[] = []): Promise<boolean> => {
     try {
-        // Passo 1: Atualizar o Cupom (Adicionar empresa na lista Utilizadores)
-        // No Bubble, se 'Utilizadores' é List of Empresas, precisamos passar o ID da Empresa.
-        const newUtilizadoresList = [...currentUtilizadores, companyId];
-        await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom/${couponId}`, undefined, 'PATCH', {
-            Utilizadores: newUtilizadoresList,
-            usos_atuais: newUtilizadoresList.length
-        });
+        console.log("Iniciando resgate:", { couponId, companyId });
 
-        // Passo 2: Atualizar a Empresa (Adicionar cupom na lista carteira_cupons)
-        const user = await fetchCompanyById(companyId);
-        if (user) {
-            const currentWallet = user.carteira_cupons || [];
-            // Evita duplicata na lista da empresa
-            if (!currentWallet.includes(couponId)) {
-                const newWalletList = [...currentWallet, couponId];
-                
-                // Prioridade: Atualizar tabela Empresa
-                let success = await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${companyId}`, undefined, 'PATCH', { "carteira_cupons": newWalletList });
-                
-                // Fallback para User somente se falhar e se o ID for compatível (mas o foco é Empresa)
-                if (!success || success.statusCode >= 400) {
-                     await fetchWithFallback(`${BUBBLE_API_ROOT}/User/${companyId}`, undefined, 'PATCH', { "carteira_cupons": newWalletList });
-                }
-            }
+        // 1. Busca dados ATUAIS do Cupom para garantir lista de utilizadores atualizada
+        const couponRaw = await fetchFromTableVariants(couponId, 'Cupom');
+        if (!couponRaw) throw new Error("Cupom não encontrado");
+
+        let currentUtilizadores: string[] = [];
+        if (Array.isArray(couponRaw['Utilizadores'])) {
+            currentUtilizadores = couponRaw['Utilizadores'];
+        } else if (Array.isArray(couponRaw['utilizadores'])) {
+            currentUtilizadores = couponRaw['utilizadores'];
         }
+
+        // Verifica se já resgatou
+        if (currentUtilizadores.includes(companyId)) {
+            console.log("Empresa já possui este cupom (Check no Cupom)");
+            // Mesmo se já estiver no cupom, verificamos se está na empresa para garantir consistência
+            // mas não retornamos true imediatamente, deixamos fluir para o passo 2
+        } else {
+            // ATUALIZA CUPOM
+            const newUtilizadores = [...currentUtilizadores, companyId];
+            const patchCoupon = await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom/${couponId}`, undefined, 'PATCH', {
+                Utilizadores: newUtilizadores,
+                usos_atuais: newUtilizadores.length
+            });
+            if (!patchCoupon) throw new Error("Falha ao atualizar Cupom");
+        }
+
+        // 2. Busca dados ATUAIS da Empresa para atualizar carteira_cupons
+        const empresaRaw = await fetchFromTableVariants(companyId, 'Empresa');
+        if (!empresaRaw) throw new Error("Empresa não encontrada");
+
+        let currentCarteira: string[] = [];
+        // Verifica variações do nome do campo
+        if (Array.isArray(empresaRaw['carteira_cupons'])) currentCarteira = empresaRaw['carteira_cupons'];
+        else if (Array.isArray(empresaRaw['Carteira_Cupons'])) currentCarteira = empresaRaw['Carteira_Cupons'];
+        else if (Array.isArray(empresaRaw['Carteira_cupons'])) currentCarteira = empresaRaw['Carteira_cupons'];
+
+        if (!currentCarteira.includes(couponId)) {
+            const newCarteira = [...currentCarteira, couponId];
+            console.log("Atualizando carteira da empresa:", newCarteira);
+            
+            // Tenta atualizar com o nome minúsculo (padrão Bubble para campos custom)
+            let result = await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${companyId}`, undefined, 'PATCH', { 
+                "carteira_cupons": newCarteira 
+            });
+
+            // Se falhar, tenta com PascalCase (caso tenha sido criado assim)
+            if (!result || result.statusCode >= 400) {
+                 result = await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${companyId}`, undefined, 'PATCH', { 
+                    "Carteira_Cupons": newCarteira 
+                });
+            }
+        } else {
+            console.log("Cupom já está na carteira da empresa.");
+        }
+
         return true;
     } catch (e) {
-        console.error("Erro ao resgatar cupom", e);
+        console.error("Erro fatal no resgate:", e);
         return false;
     }
 };
 
-// 2. Busca a Carteira (Prioriza a lista no perfil da empresa para performance)
 export const fetchClaimedCoupons = async (companyId: string): Promise<Coupon[]> => {
     try {
-        let couponIds: string[] = [];
-
-        // Busca dados frescos da empresa para pegar a lista de IDs
+        // Busca dados frescos da empresa
         const user = await fetchCompanyById(companyId);
-        if (user && user.carteira_cupons && user.carteira_cupons.length > 0) {
-            couponIds = user.carteira_cupons;
-        }
+        
+        // Verifica o campo carteira_cupons mapeado na interface Company
+        const couponIds = user?.carteira_cupons || [];
 
         let coupons: Coupon[] = [];
 
         if (couponIds.length > 0) {
-             // Busca detalhes de cada cupom em paralelo
+             // Busca detalhes de cada cupom
              const promises = couponIds.map(id => fetchFromTableVariants(id, 'Cupom'));
              const results = await Promise.all(promises);
-             coupons = results.filter(r => r !== null).map(c => mapBubbleToCoupon(c));
+             coupons = results.filter(r => r && (r.codigo || r.Code)).map(c => mapBubbleToCoupon(c));
         } else {
-            // Fallback: Busca reversa (Cupons onde eu estou na lista) - Mais lento mas seguro
+            // Fallback: Busca reversa (Cupons onde eu estou na lista)
+            // Útil se a escrita na carteira falhou mas no cupom funcionou
+            console.log("Carteira vazia, tentando busca reversa...");
             const constraints = [{ key: "Utilizadores", constraint_type: "contains", value: companyId }];
             const url = `${BUBBLE_API_ROOT}/Cupom?constraints=${JSON.stringify(constraints)}`;
             const result = await fetchWithFallback(url);
@@ -413,9 +456,9 @@ export const fetchClaimedCoupons = async (companyId: string): Promise<Coupon[]> 
             }
         }
 
-        // Enriquece com dados do Dono (Logo/Nome da loja)
+        // Enriquece com dados do Dono (Logo/Nome da loja) para o card ficar bonito
         if (coupons.length > 0) {
-            const allCompanies = await fetchCompanies();
+            const allCompanies = await fetchCompanies(); // Cacheado ou rápido
             return coupons.map(c => {
                 const owner = allCompanies.find(comp => comp._id === c.Dono);
                 if (owner) {
@@ -430,7 +473,6 @@ export const fetchClaimedCoupons = async (companyId: string): Promise<Coupon[]> 
     return [];
 };
 
-// 3. Validar QR Code (Simulação de validação no caixa)
 export const processQrCode = async (dataString: string): Promise<{valid: boolean, message: string, coupon?: Coupon}> => {
     try {
         // Esperado formato: "COUPON_ID:EMPRESA_ID"
@@ -442,30 +484,28 @@ export const processQrCode = async (dataString: string): Promise<{valid: boolean
             couponId = parts[0];
             empresaId = parts[1];
         } else {
-            // Tenta achar apenas ID do cupom
             couponId = dataString;
         }
 
-        if (!couponId) return { valid: false, message: "Código inválido." };
+        if (!couponId) return { valid: false, message: "Código QR inválido ou incompleto." };
 
-        // Busca o cupom no banco
         const couponData = await fetchFromTableVariants(couponId, 'Cupom');
-        if (!couponData) return { valid: false, message: "Cupom não encontrado." };
+        if (!couponData) return { valid: false, message: "Cupom não encontrado no sistema." };
 
         const coupon = mapBubbleToCoupon(couponData);
 
-        if (coupon.status !== 'active') return { valid: false, message: "Este cupom está inativo ou expirado." };
+        if (coupon.status !== 'active') return { valid: false, message: "Este cupom não está mais ativo." };
 
-        // Verifica se a empresa está na lista de Utilizadores (List of Empresas)
+        // Verifica se a empresa está na lista de Utilizadores
         if (empresaId) {
             if (!coupon.utilizadores?.includes(empresaId)) {
-                return { valid: false, message: "Esta empresa não resgatou este cupom oficialmente no Hub." };
+                return { valid: false, message: "Cliente não possui este cupom resgatado oficialmente." };
             }
         }
 
-        return { valid: true, message: "Cupom Válido! Pode aplicar o desconto para o parceiro.", coupon };
+        return { valid: true, message: `Desconto de ${coupon.discountValue} autorizado!`, coupon };
 
     } catch (e) {
-        return { valid: false, message: "Erro ao processar código." };
+        return { valid: false, message: "Erro de leitura. Tente novamente." };
     }
 };

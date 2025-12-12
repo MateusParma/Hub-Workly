@@ -18,10 +18,10 @@ interface ErrorBoundaryState {
 }
 
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
+  public state: ErrorBoundaryState = {
+    hasError: false,
+    error: null
+  };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
@@ -188,7 +188,7 @@ const AppContent: React.FC = () => {
   const renderView = () => {
     switch(currentView) {
       case 'dashboard':
-        return <Dashboard />;
+        return <Dashboard currentUser={currentUser} />;
       case 'partners':
         return <PartnerDirectory userIsPro={userIsPro} />;
       case 'coupons':
@@ -196,7 +196,7 @@ const AppContent: React.FC = () => {
       case 'settings':
         return <Settings currentUser={currentUser} />;
       default:
-        return <Dashboard />;
+        return <Dashboard currentUser={currentUser} />;
     }
   };
 

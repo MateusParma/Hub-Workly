@@ -38,6 +38,14 @@ export interface Company {
   carteira_cupons?: string[]; // LISTA DE CUPONS QUE EU RESGATEI (Campo: carteira_cupons)
 }
 
+export interface Redemption {
+  companyName: string;
+  companyLogo: string;
+  couponCode: string;
+  discount: string;
+  date: string; // Data aproximada ou atual
+}
+
 export interface DashboardStats {
   totalPartners: number;
   totalCoupons: number;

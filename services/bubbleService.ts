@@ -1,5 +1,5 @@
 
-import { Company, BubbleResponse, Coupon, DashboardStats } from '../types';
+import { Company, BubbleResponse, Coupon, DashboardStats, Redemption } from '../types';
 
 // CONFIGURAÇÃO: Base da URL
 const BUBBLE_API_ROOT = "https://workly.pt/version-test/api/1.1/obj";
@@ -47,7 +47,10 @@ const mapBubbleToCoupon = (item: any): Coupon => {
         uses: item.usos_atuais || item.Usos || item.Current_Uses || 0,
         status: (item.ativo === false || item.Active === false) ? 'paused' : 'active',
         utilizadores: utilizadoresList,
-        Dono: item['Dono'] || item['Owner']
+        Dono: item['Dono'] || item['Owner'],
+        // Campos internos do Bubble
+        // @ts-ignore
+        _creator: item['Created By'] || item['_creator']
     };
 };
 
@@ -308,6 +311,52 @@ export const fetchDashboardStats = async (): Promise<DashboardStats> => {
         }
     } catch (e) {}
     return stats;
+};
+
+// Nova Função para buscar dados do Painel de Resgates
+export const fetchMyRedemptions = async (myCoupons: Coupon[]): Promise<Redemption[]> => {
+    const redemptions: Redemption[] = [];
+    const uniqueUserIds = new Set<string>();
+
+    // 1. Coleta todos os IDs únicos de quem usou os cupons
+    myCoupons.forEach(coupon => {
+        if (coupon.utilizadores) {
+            coupon.utilizadores.forEach(uid => uniqueUserIds.add(uid));
+        }
+    });
+
+    if (uniqueUserIds.size === 0) return [];
+
+    // 2. Busca dados dessas empresas (Clientes)
+    // Otimização: Busca em paralelo
+    const userPromises = Array.from(uniqueUserIds).map(uid => fetchCompanyById(uid));
+    const usersData = await Promise.all(userPromises);
+    
+    // Mapa para acesso rápido
+    const usersMap: Record<string, Company> = {};
+    usersData.forEach(u => {
+        if (u) usersMap[u._id] = u;
+    });
+
+    // 3. Monta a lista de resgates
+    myCoupons.forEach(coupon => {
+        if (coupon.utilizadores) {
+            coupon.utilizadores.forEach(uid => {
+                const userCompany = usersMap[uid];
+                if (userCompany) {
+                    redemptions.push({
+                        companyName: userCompany.Name,
+                        companyLogo: userCompany.Logo || '',
+                        couponCode: coupon.code,
+                        discount: coupon.discountValue,
+                        date: 'Recente' // O Bubble não guarda data no array de strings por padrão, então usamos placeholder
+                    });
+                }
+            });
+        }
+    });
+
+    return redemptions;
 };
 
 export const updateCompany = async (id: string, data: Partial<Company>): Promise<boolean> => {
@@ -577,65 +626,69 @@ export const fetchClaimedCoupons = async (companyId: string): Promise<Coupon[]> 
     return [];
 };
 
-export const processQrCode = async (dataString: string, scannerId?: string): Promise<{valid: boolean, message: string, coupon?: Coupon}> => {
+// --- SCANNER LOGIC REFINADO (DONO ESCANEIA CLIENTE) ---
+export const processQrCode = async (dataString: string, scannerOwnerId?: string): Promise<{valid: boolean, message: string, coupon?: Coupon}> => {
     try {
-        let couponId = "";
-        let clienteId = "";
+        if (!scannerOwnerId) return { valid: false, message: "ID da sua empresa não identificado." };
 
-        // Formato esperado: "COUPON_ID:CLIENTE_ID"
+        let couponId = "";
+        let clientId = "";
+
+        // FORMATO ESPERADO DO QR: "COUPON_ID:CLIENT_ID"
+        // Quem gerou o QR foi o Cliente no app dele, ou o sistema gerou um cupom que contem ID do Cupom e ID do Cliente (Carteira)
+        // OBS: Na aba 'Minha Carteira', o QR gerado é `${coupon.id}:${currentUser._id}`.
+        // Onde coupon.id é o cupom que ele tem, e currentUser._id é o ID dele (cliente).
+        
         if (dataString.includes(":")) {
             const parts = dataString.split(":");
             couponId = parts[0];
-            clienteId = parts[1];
+            clientId = parts[1];
         } else {
-            couponId = dataString;
+            // Se for QR antigo só com ID do cupom, não sabemos quem é o cliente
+            return { valid: false, message: "QR Code incompleto. O cliente deve apresentar o QR da Carteira." };
         }
 
-        if (!couponId) return { valid: false, message: "QR Code inválido." };
+        if (!couponId || !clientId) return { valid: false, message: "Dados do QR inválidos." };
 
+        // 1. Busca Cupom
         const couponData = await fetchFromTableVariants(couponId, 'Cupom');
         if (!couponData) return { valid: false, message: "Cupom não encontrado." };
 
         const coupon = mapBubbleToCoupon(couponData);
 
-        if (coupon.status !== 'active') return { valid: false, message: "Cupom inativo." };
-
-        // Verifica se o Dono da Loja é quem está escaneando (Segurança básica)
-        if (scannerId && coupon.Dono) {
-            if (coupon.Dono !== scannerId) {
-                 return { valid: false, message: "Este cupom não pertence à sua empresa." };
-            }
+        // 2. Valida se VOCÊ (Scanner) é o DONO do Cupom
+        // Só o dono pode validar o desconto
+        if (coupon.Dono !== scannerOwnerId) {
+             return { valid: false, message: "Este cupom não pertence à sua empresa." };
         }
 
-        // LÓGICA DE VALIDAÇÃO DO USO
-        // Se houver ID do cliente no QR, verificamos/registramos o uso
-        if (clienteId) {
-             // 1. Verifica se o cliente realmente resgatou
-             // Obs: O cliente é adicionado em 'Utilizadores' quando ele clica em 'Pegar Cupom'.
-             // Mas aqui o dono da loja está validando.
-             
-             // Opcional: Adicionar à lista se não estiver (Garante que o uso foi contabilizado)
-             // Requisito: "adicionar a empresa no campo utilizadores na tabela cupom"
-             
-             let currentUtilizadores: string[] = coupon.utilizadores || [];
-             if (!currentUtilizadores.includes(clienteId)) {
-                 const newUtilizadores = [...currentUtilizadores, clienteId];
-                 const payload = { 
-                     Utilizadores: newUtilizadores, 
-                     Users: newUtilizadores,
-                     usos_atuais: newUtilizadores.length,
-                     Current_Uses: newUtilizadores.length
-                 };
-                 await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom/${couponId}`, undefined, 'PATCH', payload);
-             }
-             
-             return { valid: true, message: `Cupom VÁLIDO! Cliente ID: ...${clienteId.slice(-4)}`, coupon };
-        } else {
-             // Se for apenas o código do cupom sem ID de cliente
-             return { valid: true, message: `Cupom VÁLIDO! Desconto: ${coupon.discountValue}`, coupon };
+        if (coupon.status !== 'active') return { valid: false, message: "Este cupom não está ativo." };
+
+        // 3. Verifica se o CLIENTE (do QR) já usou
+        const currentUtilizadores = coupon.utilizadores || [];
+        if (currentUtilizadores.includes(clientId)) {
+            // Opcional: Permitir reuso se a regra de negócio deixar, mas por padrão avisamos
+            // return { valid: false, message: "Este cliente já utilizou este cupom." };
         }
+
+        // 4. REGISTRA O USO DO CLIENTE
+        // Adiciona o ID do Cliente na lista de utilizadores do cupom
+        if (!currentUtilizadores.includes(clientId)) {
+            const newUtilizadores = [...currentUtilizadores, clientId];
+            const payload = { 
+                Utilizadores: newUtilizadores, 
+                Users: newUtilizadores,
+                usos_atuais: newUtilizadores.length,
+                Current_Uses: newUtilizadores.length
+            };
+            
+            await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom/${couponId}`, undefined, 'PATCH', payload);
+        }
+
+        return { valid: true, message: `Desconto Validado! Cliente registrado.`, coupon };
 
     } catch (e) {
-        return { valid: false, message: "Erro de leitura." };
+        console.error(e);
+        return { valid: false, message: "Erro de leitura/conexão." };
     }
 };

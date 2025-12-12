@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
-import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
-import { X, CheckCircle, AlertCircle, Camera, Loader2, Upload, FileImage } from 'lucide-react';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import { X, CheckCircle, AlertCircle, Camera, Loader2, Upload, FileImage, RefreshCw } from 'lucide-react';
 import { processQrCode } from '../services/bubbleService';
 import { Coupon, Company } from '../types';
 
@@ -17,64 +17,93 @@ const QRScannerModal: React.FC<QRScannerModalProps> = ({ isOpen, onClose, curren
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'camera' | 'file'>('camera');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Referência para instância do scanner e controle de montagem
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const isScanningRef = useRef<boolean>(false);
 
-  // Instância do Scanner para controle
-  const scannerRef = useRef<Html5QrcodeScanner | null>(null);
-
+  // Inicializa Câmera
   useEffect(() => {
-    if (isOpen && !scanResult && activeTab === 'camera') {
-      const initScanner = setTimeout(() => {
-          try {
-              const element = document.getElementById("reader");
-              if (!element) return;
+    let mounted = true;
 
-              // Limpa anterior se existir
-              if (scannerRef.current) {
-                  try { scannerRef.current.clear(); } catch(e) {}
-              }
+    const startCamera = async () => {
+      if (!isOpen || activeTab !== 'camera' || scanResult) return;
 
-              const scanner = new Html5QrcodeScanner(
-                  "reader", 
-                  { 
-                      fps: 10, 
-                      qrbox: { width: 250, height: 250 },
-                      aspectRatio: 1.0,
-                      showTorchButtonIfSupported: true
-                  }, 
-                  /* verbose= */ false
-              );
-              scannerRef.current = scanner;
-              
-              scanner.render(
-                async (decodedText: string) => {
-                    if (isProcessing) return;
-                    handleCodeFound(decodedText, scanner);
-                },
-                (errorMessage: string) => { /* ignore */ }
-              );
-          } catch (err: any) {
-              console.error("Erro ao iniciar câmera", err);
-              setCameraError("Não foi possível acessar a câmera. Tente usar o upload de arquivo.");
-              setActiveTab('file');
-          }
-      }, 500);
+      // Pequeno delay para garantir que o DOM (div#reader) foi renderizado
+      await new Promise(r => setTimeout(r, 100));
+      if (!mounted) return;
 
-      return () => {
-          clearTimeout(initScanner);
-          if (scannerRef.current) {
-            try { scannerRef.current.clear(); } catch (e) {}
-          }
-      };
-    }
-  }, [isOpen, scanResult, activeTab]);
+      const element = document.getElementById("reader");
+      if (!element) return;
 
-  const handleCodeFound = async (decodedText: string, scannerInstance?: any) => {
-      setIsProcessing(true);
+      // Limpeza preventiva
+      if (scannerRef.current) {
+         try {
+             if (isScanningRef.current) {
+                await scannerRef.current.stop();
+                isScanningRef.current = false;
+             }
+             scannerRef.current.clear();
+         } catch (e) { console.log("Cleanup error", e); }
+      }
+
       try {
-          if (scannerInstance) {
-              try { await scannerInstance.pause(true); } catch(e) {}
+        const html5QrCode = new Html5Qrcode("reader");
+        scannerRef.current = html5QrCode;
+
+        const config = { 
+            fps: 10, 
+            qrbox: { width: 250, height: 250 },
+            aspectRatio: 1.0
+        };
+
+        await html5QrCode.start(
+          { facingMode: "environment" }, // Força câmera traseira
+          config,
+          (decodedText) => {
+             if (!isScanningRef.current) return;
+             // Pausa para processar
+             html5QrCode.pause(true);
+             handleCodeFound(decodedText);
+          },
+          (errorMessage) => { 
+             // Ignora erros de frame vazio
           }
-          
+        );
+        isScanningRef.current = true;
+        setCameraError(null);
+
+      } catch (err: any) {
+        console.error("Erro ao iniciar câmera:", err);
+        if (mounted) {
+            setCameraError("Erro ao acessar câmera. Verifique as permissões ou use o upload.");
+            // Fallback automático para upload se falhar câmera
+            // setActiveTab('file'); 
+        }
+      }
+    };
+
+    if (isOpen && activeTab === 'camera') {
+        startCamera();
+    }
+
+    return () => {
+        mounted = false;
+        if (scannerRef.current && isScanningRef.current) {
+            scannerRef.current.stop().then(() => {
+                scannerRef.current?.clear();
+                isScanningRef.current = false;
+            }).catch(err => console.error("Stop failed", err));
+        }
+    };
+  }, [isOpen, activeTab, scanResult]);
+
+  const handleCodeFound = async (decodedText: string) => {
+      if (isProcessing) return;
+      setIsProcessing(true);
+      
+      try {
+          // Passamos o ID da empresa atual (quem está escaneando)
           const result = await processQrCode(decodedText, currentUser?._id);
           setScanResult(result);
       } catch (err) {
@@ -89,14 +118,14 @@ const QRScannerModal: React.FC<QRScannerModalProps> = ({ isOpen, onClose, curren
       if (!file) return;
 
       setIsProcessing(true);
+      // Instância temporária para leitura de arquivo
       const html5QrCode = new Html5Qrcode("file-reader-placeholder");
       
       try {
           const decodedText = await html5QrCode.scanFile(file, true);
-          await handleCodeFound(decodedText);
+          handleCodeFound(decodedText);
       } catch (err) {
           setScanResult({ valid: false, message: "Não foi possível ler um QR Code nesta imagem." });
-      } finally {
           setIsProcessing(false);
       }
   };
@@ -105,12 +134,13 @@ const QRScannerModal: React.FC<QRScannerModalProps> = ({ isOpen, onClose, curren
       setScanResult(null);
       setCameraError(null);
       setIsProcessing(false);
-      if (activeTab === 'camera') {
-         // Force re-mount logic by existing useEffect
-         if (scannerRef.current) {
-             try { scannerRef.current.resume(); } catch(e) { /* Resume failed, maybe cleared, useEffect will handle */ }
-         }
-      }
+      // O useEffect cuidará de reiniciar a câmera pois scanResult mudou para null
+  };
+
+  const handleClose = () => {
+      setScanResult(null);
+      setIsProcessing(false);
+      onClose();
   };
 
   if (!isOpen) return null;
@@ -119,7 +149,7 @@ const QRScannerModal: React.FC<QRScannerModalProps> = ({ isOpen, onClose, curren
     <div className="fixed inset-0 z-[60] overflow-y-auto" role="dialog" aria-modal="true">
       <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
         
-        <div className="fixed inset-0 bg-black/90 transition-opacity backdrop-blur-sm" onClick={onClose}></div>
+        <div className="fixed inset-0 bg-black/90 transition-opacity backdrop-blur-sm" onClick={handleClose}></div>
 
         <span className="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
 
@@ -128,9 +158,9 @@ const QRScannerModal: React.FC<QRScannerModalProps> = ({ isOpen, onClose, curren
           <div className="flex justify-between items-center p-4 border-b border-slate-700 bg-slate-800">
             <h3 className="text-lg font-bold text-white flex items-center">
                 <Camera className="w-5 h-5 mr-2 text-blue-400" />
-                Validador de Cupons
+                Scanner
             </h3>
-            <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors bg-slate-700 p-1 rounded-full">
+            <button onClick={handleClose} className="text-slate-400 hover:text-white transition-colors bg-slate-700 p-1 rounded-full">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -161,28 +191,34 @@ const QRScannerModal: React.FC<QRScannerModalProps> = ({ isOpen, onClose, curren
                     <>
                         {/* CAMERA VIEW */}
                         {activeTab === 'camera' && (
-                            <div className="space-y-4">
+                            <div className="space-y-4 relative">
                                 {cameraError ? (
                                     <div className="text-center text-red-400 p-4 border border-red-900/50 bg-red-900/10 rounded-lg">
                                         <AlertCircle className="w-10 h-10 mx-auto mb-2" />
                                         <p>{cameraError}</p>
+                                        <button onClick={() => setActiveTab('file')} className="mt-4 text-blue-400 underline text-sm">
+                                            Tentar via Upload de Arquivo
+                                        </button>
                                     </div>
                                 ) : (
-                                    <div id="reader" className="overflow-hidden rounded-xl border-2 border-blue-500/50 bg-black shadow-inner relative min-h-[250px]"></div>
+                                    <>
+                                        {/* Container Explicito para evitar altura 0 */}
+                                        <div id="reader" className="w-full h-[300px] overflow-hidden rounded-xl border-2 border-blue-500/50 bg-black relative"></div>
+                                        <p className="text-sm text-center text-slate-400 mt-2">
+                                            Aponte para o QR Code
+                                        </p>
+                                    </>
                                 )}
-                                <p className="text-sm text-center text-slate-400">
-                                    Aponte para o QR Code do cliente.
-                                </p>
                             </div>
                         )}
 
                         {/* FILE VIEW */}
                         {activeTab === 'file' && (
-                            <div className="text-center py-8 border-2 border-dashed border-slate-700 rounded-xl hover:border-blue-500 transition-colors cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+                            <div className="text-center py-8 border-2 border-dashed border-slate-700 rounded-xl hover:border-blue-500 transition-colors cursor-pointer bg-slate-800/50" onClick={() => fileInputRef.current?.click()}>
                                 <div id="file-reader-placeholder" className="hidden"></div>
                                 <FileImage className="w-16 h-16 mx-auto text-slate-500 mb-4" />
-                                <p className="text-white font-bold mb-1">Clique para carregar imagem</p>
-                                <p className="text-slate-500 text-sm">JPG, PNG com QR Code</p>
+                                <p className="text-white font-bold mb-1">Carregar QR Code</p>
+                                <p className="text-slate-500 text-sm">Selecione uma imagem da galeria</p>
                                 <input 
                                     type="file" 
                                     ref={fileInputRef} 
@@ -194,10 +230,10 @@ const QRScannerModal: React.FC<QRScannerModalProps> = ({ isOpen, onClose, curren
                         )}
 
                         {isProcessing && (
-                             <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-20 rounded-xl backdrop-blur-sm">
+                             <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-20 rounded-xl backdrop-blur-sm">
                                 <div className="text-white flex flex-col items-center">
                                     <Loader2 className="w-10 h-10 animate-spin mb-3 text-blue-500" />
-                                    <span className="font-bold">Verificando...</span>
+                                    <span className="font-bold">Processando...</span>
                                 </div>
                              </div>
                         )}
@@ -216,7 +252,7 @@ const QRScannerModal: React.FC<QRScannerModalProps> = ({ isOpen, onClose, curren
                         )}
                         
                         <h4 className={`text-2xl font-bold mb-2 ${scanResult.valid ? 'text-green-400' : 'text-red-400'}`}>
-                            {scanResult.valid ? 'APROVADO' : 'RECUSADO'}
+                            {scanResult.valid ? 'SUCESSO!' : 'ATENÇÃO'}
                         </h4>
                         <p className="text-slate-300 mb-6 px-4 leading-relaxed border-b border-slate-800 pb-6 w-full">{scanResult.message}</p>
     
@@ -225,24 +261,24 @@ const QRScannerModal: React.FC<QRScannerModalProps> = ({ isOpen, onClose, curren
                                 <div className="absolute top-0 right-0 p-2 opacity-10">
                                     <CheckCircle className="w-24 h-24 text-white" />
                                 </div>
-                                <p className="text-xs text-blue-400 uppercase font-bold tracking-wider mb-1">Cupom Validado</p>
+                                <p className="text-xs text-blue-400 uppercase font-bold tracking-wider mb-1">Cupom Resgatado</p>
                                 <p className="text-2xl font-mono font-bold text-white mb-1">{scanResult.coupon.code}</p>
-                                <p className="text-green-400 font-bold text-lg">{scanResult.coupon.discountValue} de Desconto</p>
+                                <p className="text-green-400 font-bold text-lg">{scanResult.coupon.discountValue}</p>
                             </div>
                         )}
     
                         <div className="flex gap-3 w-full mt-auto">
                             <button 
-                                onClick={onClose}
+                                onClick={handleClose}
                                 className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg font-medium transition-colors"
                             >
-                                Sair
+                                Fechar
                             </button>
                             <button 
                                 onClick={handleReset}
-                                className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold transition-colors shadow-lg shadow-blue-900/20"
+                                className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold transition-colors shadow-lg shadow-blue-900/20 flex items-center justify-center"
                             >
-                                Ler Próximo
+                                <RefreshCw className="w-4 h-4 mr-2" /> Ler Outro
                             </button>
                         </div>
                     </div>

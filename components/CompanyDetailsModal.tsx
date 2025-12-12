@@ -100,38 +100,50 @@ const CompanyDetailsModal: React.FC<CompanyDetailsModalProps> = ({ company, isOp
                      </div>
                      
                      <div className="space-y-3 pt-4 border-t border-slate-100">
+                        {/* WEBSITE BUTTON - Clicável */}
                         {company.Website && (
-                            <a href={company.Website} target="_blank" rel="noreferrer" className="flex items-center text-sm text-slate-600 hover:text-orange-600 transition-colors group">
-                                <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center mr-3 group-hover:bg-orange-50">
+                            <a href={company.Website.startsWith('http') ? company.Website : `https://${company.Website}`} target="_blank" rel="noreferrer" className="flex items-center text-sm text-slate-600 hover:text-orange-600 transition-colors group cursor-pointer p-1 -ml-1 rounded-lg hover:bg-slate-50">
+                                <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center mr-3 group-hover:bg-orange-100 group-hover:text-orange-600 transition-colors border border-slate-100 group-hover:border-orange-200">
                                     <Globe className="w-4 h-4 text-slate-400 group-hover:text-orange-500" />
                                 </div>
-                                <span className="truncate flex-1">Website Oficial</span>
+                                <span className="truncate flex-1 font-medium">Website Oficial</span>
                                 <ExternalLink className="w-3 h-3 opacity-50"/>
                             </a>
                         )}
+
+                        {/* PHONE BUTTON - Clicável (Ligar) */}
                         {company.Phone && (
-                            <div className="flex items-center text-sm text-slate-600 group">
-                                <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center mr-3">
-                                    <Phone className="w-4 h-4 text-slate-400" />
+                            <a href={`tel:${company.Phone.replace(/[^\d+]/g, '')}`} className="flex items-center text-sm text-slate-600 hover:text-green-600 transition-colors group cursor-pointer p-1 -ml-1 rounded-lg hover:bg-slate-50">
+                                <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center mr-3 group-hover:bg-green-100 group-hover:text-green-600 transition-colors border border-slate-100 group-hover:border-green-200">
+                                    <Phone className="w-4 h-4 text-slate-400 group-hover:text-green-500" />
                                 </div>
-                                <span className="truncate">{company.Phone}</span>
-                            </div>
+                                <span className="truncate font-medium">{company.Phone}</span>
+                            </a>
                         )}
+
+                        {/* EMAIL BUTTON - Clicável (Mailto) */}
                         {company.Email && (
-                            <div className="flex items-center text-sm text-slate-600">
-                                <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center mr-3">
-                                    <Mail className="w-4 h-4 text-slate-400" />
+                            <a href={`mailto:${company.Email}`} className="flex items-center text-sm text-slate-600 hover:text-blue-600 transition-colors group cursor-pointer p-1 -ml-1 rounded-lg hover:bg-slate-50">
+                                <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center mr-3 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors border border-slate-100 group-hover:border-blue-200">
+                                    <Mail className="w-4 h-4 text-slate-400 group-hover:text-blue-500" />
                                 </div>
-                                <span className="truncate">{company.Email}</span>
-                            </div>
+                                <span className="truncate font-medium">{company.Email}</span>
+                            </a>
                         )}
+
+                        {/* ADDRESS BUTTON - Clicável (Maps) */}
                         {company.Address && (
-                            <div className="flex items-center text-sm text-slate-600">
-                                <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center mr-3">
-                                    <MapPin className="w-4 h-4 text-slate-400" />
+                            <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(company.Address)}`} target="_blank" rel="noreferrer" className="flex items-center text-sm text-slate-600 hover:text-red-600 transition-colors group cursor-pointer p-1 -ml-1 rounded-lg hover:bg-slate-50">
+                                <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center mr-3 group-hover:bg-red-100 group-hover:text-red-600 transition-colors border border-slate-100 group-hover:border-red-200">
+                                    <MapPin className="w-4 h-4 text-slate-400 group-hover:text-red-500" />
                                 </div>
-                                <span className="truncate">{company.Address}</span>
-                            </div>
+                                <span className="truncate font-medium">{company.Address}</span>
+                            </a>
+                        )}
+                        
+                        {/* Fallback se tudo estiver vazio */}
+                        {!company.Website && !company.Phone && !company.Email && !company.Address && (
+                             <p className="text-xs text-slate-400 italic py-2">Informações de contato indisponíveis.</p>
                         )}
                      </div>
                  </div>

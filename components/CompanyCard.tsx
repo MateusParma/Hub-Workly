@@ -1,6 +1,7 @@
+
 import React from 'react';
 import { Company } from '../types';
-import { MapPin, Globe, Sparkles, Lock, ArrowRight } from 'lucide-react';
+import { Sparkles, Lock, ArrowRight, Ticket } from 'lucide-react';
 import { generateCompanyInsight } from '../services/geminiService';
 
 interface CompanyCardProps {
@@ -21,7 +22,7 @@ const CompanyCard: React.FC<CompanyCardProps> = ({ company, userIsPro, onOpenDet
     setIsLoadingInsight(false);
   };
 
-  const hasCoupons = company.Coupons && company.Coupons.length > 0;
+  const activeCouponsCount = company.Coupons?.filter(c => c.status !== 'paused').length || 0;
 
   return (
     <div 
@@ -39,13 +40,19 @@ const CompanyCard: React.FC<CompanyCardProps> = ({ company, userIsPro, onOpenDet
             />
           </div>
         </div>
-        {company.IsPartner && (
-          <div className="absolute top-3 right-3">
+        <div className="absolute top-3 right-3 flex flex-col items-end gap-1">
+            {company.IsPartner && (
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-white/80 backdrop-blur text-blue-800 shadow-sm border border-blue-100">
-              Parceiro
+                Parceiro
             </span>
-          </div>
-        )}
+            )}
+            {activeCouponsCount > 0 && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700 shadow-sm border border-green-200 animate-pulse-slow">
+                    <Ticket className="w-3 h-3 mr-1" />
+                    {activeCouponsCount} {activeCouponsCount === 1 ? 'Oferta' : 'Ofertas'}
+                </span>
+            )}
+        </div>
       </div>
 
       {/* Card Body */}

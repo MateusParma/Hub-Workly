@@ -1,19 +1,26 @@
+
 import React, { useState, useEffect } from 'react';
-import { Ticket, Plus, Trash2, Edit, Calendar, Hash, Loader2, Save, X, AlertCircle } from 'lucide-react';
+import { Ticket, Plus, Trash2, Edit, Calendar, Hash, Loader2, Save, X, AlertCircle, ShoppingBag, Store } from 'lucide-react';
 import { Company, Coupon } from '../types';
-import { fetchCompanyById, createCoupon, updateCoupon, deleteCoupon } from '../services/bubbleService'; 
+import { fetchCompanyById, createCoupon, updateCoupon, deleteCoupon, fetchClaimedCoupons } from '../services/bubbleService'; 
 
 const MyCoupons: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState<Company | null>(null);
+  
+  // Abas
+  const [activeTab, setActiveTab] = useState<'published' | 'wallet'>('published');
+  
+  // Carteira
+  const [walletCoupons, setWalletCoupons] = useState<Coupon[]>([]);
+  const [loadingWallet, setLoadingWallet] = useState(false);
+
+  // Modal de Criação
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  
-  // Estado para edição/criação
   const [editingId, setEditingId] = useState<string | null>(null);
   
-  // Formulário alinhado com o Bubble
   const [formData, setFormData] = useState({
     code: '',
     description: '',
@@ -37,9 +44,24 @@ const MyCoupons: React.FC = () => {
       setLoading(false);
   };
 
+  const loadWallet = async () => {
+      if (!currentUser?._id) return;
+      setLoadingWallet(true);
+      const coupons = await fetchClaimedCoupons(currentUser._id);
+      setWalletCoupons(coupons);
+      setLoadingWallet(false);
+  };
+
   useEffect(() => {
       loadData();
   }, []);
+
+  // Carrega carteira quando muda de aba e temos usuário
+  useEffect(() => {
+      if (activeTab === 'wallet' && currentUser) {
+          loadWallet();
+      }
+  }, [activeTab, currentUser]);
 
   const resetForm = () => {
     setFormData({ code: '', description: '', discountValue: '', maxUses: '', expiryDate: '' });
@@ -85,17 +107,15 @@ const MyCoupons: React.FC = () => {
 
     try {
         if (editingId) {
-            // EDITAR
             const success = await updateCoupon(editingId, formData);
             if (!success) throw new Error("Falha ao atualizar cupom.");
         } else {
-            // CRIAR
             const newId = await createCoupon(currentUser._id, formData);
             if (!newId) throw new Error("Falha ao criar cupom. Verifique as permissões de API no Bubble.");
         }
         
         setShowCreateModal(false);
-        await loadData(); // Recarrega tudo para mostrar atualizado
+        await loadData();
     } catch (err: any) {
         setErrorMsg(err.message || "Ocorreu um erro ao salvar.");
     } finally {
@@ -108,19 +128,42 @@ const MyCoupons: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Gerenciador de Cupons</h1>
-          <p className="text-slate-500">Gerencie as ofertas que sua empresa oferece no Hub.</p>
+          <p className="text-slate-500">Gerencie suas ofertas ou veja os benefícios que você resgatou.</p>
         </div>
+      </div>
+
+      {/* Tabs Switcher */}
+      <div className="flex space-x-1 bg-white p-1 rounded-xl border border-slate-200 shadow-sm w-fit">
+          <button
+             onClick={() => setActiveTab('published')}
+             className={`flex items-center px-4 py-2 text-sm font-bold rounded-lg transition-all ${
+                 activeTab === 'published' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'
+             }`}
+          >
+             <Store className="w-4 h-4 mr-2" />
+             Ofertas Criadas
+          </button>
+          <button
+             onClick={() => setActiveTab('wallet')}
+             className={`flex items-center px-4 py-2 text-sm font-bold rounded-lg transition-all ${
+                 activeTab === 'wallet' ? 'bg-green-50 text-green-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'
+             }`}
+          >
+             <ShoppingBag className="w-4 h-4 mr-2" />
+             Minha Carteira
+          </button>
       </div>
 
       {loading ? (
            <div className="flex justify-center p-10"><Loader2 className="animate-spin text-blue-600" /></div>
-      ) : (
+      ) : activeTab === 'published' ? (
+        // --- ABA: CUPONS PUBLICADOS ---
         <div className="animate-fadeIn">
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                <div>
-                 <h3 className="text-lg font-bold text-slate-900">Cupons Ativos</h3>
-                 <p className="text-sm text-slate-500">Sincronizado com Bubble DB.</p>
+                 <h3 className="text-lg font-bold text-slate-900">Cupons Ativos da Sua Empresa</h3>
+                 <p className="text-sm text-slate-500">Estes cupons aparecem para outros parceiros.</p>
                </div>
                <button 
                  onClick={handleOpenCreate}
@@ -137,7 +180,7 @@ const MyCoupons: React.FC = () => {
                   <tr>
                     <th className="px-6 py-4">Código</th>
                     <th className="px-6 py-4">Descrição</th>
-                    <th className="px-6 py-4">Regras</th>
+                    <th className="px-6 py-4">Engajamento</th>
                     <th className="px-6 py-4 text-center">Status</th>
                     <th className="px-6 py-4 text-right">Ações</th>
                   </tr>
@@ -153,17 +196,15 @@ const MyCoupons: React.FC = () => {
                         <div className="text-xs text-slate-500 truncate max-w-[200px]">{coupon.description}</div>
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600 space-y-1">
-                        {coupon.maxUses ? (
-                          <div className="flex items-center text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded w-fit">
-                            <Hash className="w-3 h-3 mr-1" /> Max: {coupon.maxUses}
-                          </div>
-                        ) : null}
-                        
-                        {coupon.expiryDate ? (
-                          <div className="flex items-center text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded w-fit">
-                            <Calendar className="w-3 h-3 mr-1" /> {new Date(coupon.expiryDate).toLocaleDateString('pt-BR')}
-                          </div>
-                        ) : <span className="text-xs text-slate-400">Sem validade</span>}
+                        <div className="flex items-center font-medium text-slate-700">
+                           <ShoppingBag className="w-3 h-3 mr-1" />
+                           {coupon.utilizadores?.length || 0} pegaram
+                        </div>
+                        {coupon.maxUses && (
+                           <div className="text-xs text-slate-400">
+                             Limite: {coupon.maxUses}
+                           </div>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-center">
                          <span className={`px-2 py-1 rounded-full text-xs font-bold ${coupon.status === 'paused' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
@@ -191,7 +232,7 @@ const MyCoupons: React.FC = () => {
                   {(!currentUser?.Coupons || currentUser.Coupons.length === 0) && (
                     <tr>
                       <td colSpan={5} className="px-6 py-10 text-center text-slate-400 italic">
-                        Nenhum cupom encontrado. Crie o primeiro acima.
+                        Nenhum cupom criado.
                       </td>
                     </tr>
                   )}
@@ -200,9 +241,69 @@ const MyCoupons: React.FC = () => {
             </div>
           </div>
         </div>
+      ) : (
+        // --- ABA: CARTEIRA (RESGATADOS) ---
+        <div className="animate-fadeIn">
+            {loadingWallet ? (
+                <div className="flex justify-center p-20 bg-white rounded-xl border border-slate-200">
+                    <Loader2 className="animate-spin text-green-600 w-8 h-8" />
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {walletCoupons.length > 0 ? (
+                        walletCoupons.map((coupon) => (
+                            <div key={coupon.id} className="bg-white border border-green-200 rounded-xl p-5 shadow-sm relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-16 h-16 bg-green-50 rounded-bl-full -mr-8 -mt-8 z-0"></div>
+                                
+                                <div className="relative z-10">
+                                    <div className="flex items-center mb-4">
+                                        <div className="w-10 h-10 rounded-full border border-slate-100 bg-white shadow-sm overflow-hidden flex-shrink-0">
+                                            {coupon.ownerData?.logo ? (
+                                                <img src={coupon.ownerData.logo} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center bg-slate-100 text-xs font-bold text-slate-400">
+                                                    {coupon.ownerData?.name.substring(0,2) || "??"}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="ml-3">
+                                            <p className="text-xs text-slate-500 font-bold uppercase">Oferecido por</p>
+                                            <p className="text-sm font-bold text-slate-900 line-clamp-1">{coupon.ownerData?.name || "Parceiro"}</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="text-center py-2">
+                                        <div className="text-2xl font-bold text-green-700">{coupon.discountValue}</div>
+                                        <p className="text-sm text-slate-600">{coupon.description}</p>
+                                    </div>
+
+                                    <div className="mt-4 bg-slate-100 rounded-lg p-2 flex items-center justify-between border border-dashed border-slate-300">
+                                        <span className="font-mono font-bold text-slate-800 tracking-widest pl-2">
+                                            {coupon.code}
+                                        </span>
+                                        <button 
+                                            onClick={() => {navigator.clipboard.writeText(coupon.code)}}
+                                            className="text-xs bg-white border border-slate-200 px-2 py-1 rounded hover:text-green-600 font-medium"
+                                        >
+                                            Copiar
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    ) : (
+                        <div className="col-span-full bg-white rounded-xl border border-dashed border-slate-200 p-12 text-center">
+                            <ShoppingBag className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                            <h3 className="text-lg font-medium text-slate-900">Sua carteira está vazia</h3>
+                            <p className="text-slate-500">Visite a aba "Empresas Parceiras" para resgatar descontos exclusivos.</p>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
       )}
 
-      {/* MODAL REAL */}
+      {/* MODAL DE CRIAÇÃO (Mesmo código anterior) */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fadeIn">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">

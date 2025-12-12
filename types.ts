@@ -13,6 +13,12 @@ export interface Coupon {
   maxUses?: number;
   uses?: number; // Usos atuais vindos do Bubble
   status?: 'active' | 'expired' | 'paused';
+  utilizadores?: string[]; // Lista de IDs de empresas que pegaram o cupom
+  ownerData?: { // Dados opcionais do dono do cupom para exibição na carteira
+      name: string;
+      logo: string;
+  };
+  Dono?: string; // ID da empresa dona
 }
 
 // Representa a Tabela 'Empresa' do Bubble

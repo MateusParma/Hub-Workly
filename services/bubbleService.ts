@@ -1,3 +1,4 @@
+
 import { Company, BubbleResponse, Coupon, DashboardStats } from '../types';
 
 // CONFIGURAÇÃO: Base da URL
@@ -13,7 +14,7 @@ const MOCK_COMPANIES: Company[] = [
     Category: "Tecnologia",
     IsPartner: true,
     Coupons: [
-      { id: 'c1', code: 'TECH10', description: '10% OFF em serviços', discountValue: '10%' }
+      { id: 'c1', code: 'TECH10', description: '10% OFF em serviços', discountValue: '10%', utilizadores: [] }
     ]
   }
 ];
@@ -26,6 +27,12 @@ const cleanImageUrl = (url?: string) => {
 };
 
 const mapBubbleToCoupon = (item: any): Coupon => {
+    // Normaliza a lista de utilizadores (pode vir null, undefined ou array)
+    let utilizadoresList: string[] = [];
+    if (Array.isArray(item['Utilizadores'])) {
+        utilizadoresList = item['Utilizadores'];
+    }
+
     return {
         id: item._id,
         code: item.codigo || item.Code || 'CUPOM',
@@ -34,7 +41,9 @@ const mapBubbleToCoupon = (item: any): Coupon => {
         expiryDate: item.validade || undefined,
         maxUses: item.max_usos || undefined,
         uses: item.usos_atuais || item.Usos || 0,
-        status: item.ativo === false ? 'paused' : 'active'
+        status: item.ativo === false ? 'paused' : 'active',
+        utilizadores: utilizadoresList,
+        Dono: item['Dono']
     };
 };
 
@@ -327,7 +336,8 @@ export const createCoupon = async (companyId: string, couponData: any): Promise<
         validade: couponData.expiryDate,
         ativo: true,
         Dono: companyId,
-        usos_atuais: 0
+        usos_atuais: 0,
+        Utilizadores: [] // Inicia lista vazia
     };
     const result = await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom`, undefined, 'POST', payload);
     if (result && result.id) {
@@ -360,4 +370,61 @@ export const updateCoupon = async (couponId: string, couponData: any): Promise<b
 export const deleteCoupon = async (couponId: string): Promise<boolean> => {
     const result = await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom/${couponId}`, undefined, 'DELETE');
     return !!result;
+};
+
+// --- NOVAS FUNÇÕES: RESGATE E CARTEIRA ---
+
+// Adiciona o usuário à lista de Utilizadores do cupom
+export const claimCoupon = async (couponId: string, companyId: string, currentUsers: string[]): Promise<boolean> => {
+    if (currentUsers.includes(companyId)) return true; // Já pegou
+
+    const newList = [...currentUsers, companyId];
+    
+    try {
+        await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom/${couponId}`, undefined, 'PATCH', {
+            Utilizadores: newList,
+            usos_atuais: newList.length // Atualiza contagem
+        });
+        return true;
+    } catch (e) {
+        console.error("Erro ao resgatar cupom", e);
+        return false;
+    }
+};
+
+// Busca todos os cupons onde o companyId está na lista Utilizadores
+export const fetchClaimedCoupons = async (companyId: string): Promise<Coupon[]> => {
+    try {
+        // Busca todos os cupons (Constraints no Bubble Data API podem ser complexas de configurar sem saber se "Use field as list" está marcado, então faremos filtro no client-side para segurança, dado volume baixo inicial)
+        // O ideal seria: constraints=[{"key":"Utilizadores","constraint_type":"contains","value":"ID"}]
+        
+        const constraints = [
+            { key: "Utilizadores", constraint_type: "contains", value: companyId }
+        ];
+        
+        const url = `${BUBBLE_API_ROOT}/Cupom?constraints=${JSON.stringify(constraints)}`;
+        const result = await fetchWithFallback(url);
+
+        if (result && result.response && result.response.results) {
+            const coupons: Coupon[] = result.response.results.map((c: any) => mapBubbleToCoupon(c));
+            
+            // Tenta enriquecer com dados do Dono (Empresa que deu o desconto) para mostrar logo/nome na carteira
+            // Buscamos todas as empresas para fazer um lookup rápido (cacheado pelo navegador se já foi carregado em outra tela)
+            const allCompanies = await fetchCompanies();
+            
+            return coupons.map(c => {
+                const owner = allCompanies.find(comp => comp._id === c.Dono);
+                if (owner) {
+                    c.ownerData = {
+                        name: owner.Name,
+                        logo: owner.Logo || ''
+                    };
+                }
+                return c;
+            });
+        }
+    } catch (e) {
+        console.warn("Erro ao buscar carteira de cupons", e);
+    }
+    return [];
 };

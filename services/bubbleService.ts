@@ -3,12 +3,12 @@ import { Company, BubbleResponse } from '../types';
 // CONFIGURAÇÃO: URL oficial baseada no seu app Workly
 const BUBBLE_API_URL = "https://workly.pt/version-test/api/1.1/obj/Empresa";
 
-// Mock Data (Dados de teste para quando a API falhar)
+// Mock Data (Dados de teste para quando a API falhar ou der CORS)
 const MOCK_COMPANIES: Company[] = [
   {
     _id: "mock1",
     Name: "Tech Solutions (Demo)",
-    Description: "Empresa de tecnologia focada em inovação. (Dados exibidos pois a conexão com Bubble não retornou resultados)",
+    Description: "Empresa de tecnologia focada em inovação. (Dados de Exemplo - API Bloqueada por CORS)",
     Logo: "https://ui-avatars.com/api/?name=Tech+Solutions&background=0D8ABC&color=fff",
     Category: "Tecnologia",
     IsPartner: true,
@@ -37,7 +37,6 @@ const cleanImageUrl = (url?: string) => {
 // Helper para mapear resposta crua do Bubble para nosso tipo Company
 const mapBubbleToCompany = (item: any): Company => {
   const generatedCoupons = [];
-  // Verifica diferentes grafias possíveis vindas do Bubble
   const promoCode = item['Codigo_Promocional'] || item['codigo_promocional'] || item['promocode'];
   
   if (promoCode) {
@@ -58,74 +57,93 @@ const mapBubbleToCompany = (item: any): Company => {
     Website: item['website'] || item['Website'] || "",
     Phone: item['Contato'] || item['contato'] || "",
     Address: item['Morada'] || item['morada'] || "",
-    IsPartner: true, // Assumimos true se está na lista
+    IsPartner: true, 
     Coupons: generatedCoupons
   };
 };
 
-export const fetchCompanies = async (): Promise<Company[]> => {
+// Função genérica de Fetch com Retry via Proxy
+const fetchWithFallback = async (url: string, signal: AbortSignal) => {
   try {
-    // Timeout de 4 segundos
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    // TENTATIVA 1: Direta
+    // Importante: NÃO enviar headers customizados em GET para evitar Preflight CORS (OPTIONS)
+    console.log(`[API] Tentando acesso direto: ${url}`);
+    const response = await fetch(url, { 
+      method: 'GET',
+      signal
+    });
 
-    const response = await fetch(BUBBLE_API_URL, { signal: controller.signal });
+    if (!response.ok) throw new Error(`Direct Error ${response.status}`);
+    return await response.json();
+
+  } catch (directError) {
+    console.warn("[API] Acesso direto falhou (provável CORS ou bloqueio). Tentando Proxy...", directError);
+    
+    // TENTATIVA 2: Via Proxy Público (Solução para Vercel -> Bubble)
+    try {
+      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+      const proxyResponse = await fetch(proxyUrl, {
+        method: 'GET',
+        signal
+      });
+      
+      if (!proxyResponse.ok) throw new Error(`Proxy Error ${proxyResponse.status}`);
+      return await proxyResponse.json();
+
+    } catch (proxyError: any) {
+      throw new Error(`Falha total de conexão (Direta e Proxy). ${proxyError.message}`);
+    }
+  }
+};
+
+export const fetchCompanies = async (): Promise<Company[]> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s total timeout
+
+  try {
+    const json: BubbleResponse<any> = await fetchWithFallback(BUBBLE_API_URL, controller.signal);
     clearTimeout(timeoutId);
-
-    if (!response.ok) throw new Error(`Status ${response.status}`);
     
-    const json: BubbleResponse<any> = await response.json();
-    const results = json.response.results || [];
-    
-    if (results.length === 0) {
-        console.warn("API Bubble retornou lista vazia. Usando Mock para demonstração.");
-        return MOCK_COMPANIES;
+    if (!json.response || !json.response.results) {
+         return MOCK_COMPANIES;
     }
 
+    const results = json.response.results;
+    if (results.length === 0) return MOCK_COMPANIES;
+
     return results.map(mapBubbleToCompany);
-  } catch (error) {
-    console.warn("Falha na conexão com Bubble (Timeout ou CORS). Usando dados de teste.", error);
+
+  } catch (error: any) {
+    console.error("FALHA CRÍTICA FETCH COMPANIES:", error);
+    clearTimeout(timeoutId);
     return MOCK_COMPANIES;
   }
 };
 
 export const fetchCompanyById = async (id: string): Promise<Company | null> => {
-  // Se o ID for de teste, retorna mock direto
   if (id === 'mock_user' || id.startsWith('test')) {
       return { ...MOCK_COMPANIES[0], _id: id, Name: "Minha Empresa (Teste)" };
   }
 
+  const url = `${BUBBLE_API_URL}/${id}`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+
   try {
-    const url = `${BUBBLE_API_URL}/${id}`;
-    
-    // Timeout de 4 segundos para o login
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
-
-    const response = await fetch(url, { signal: controller.signal });
+    const json = await fetchWithFallback(url, controller.signal);
     clearTimeout(timeoutId);
-
-    if (!response.ok) {
-       console.warn(`Erro ao buscar empresa ${id}: ${response.status}`);
-       return { 
-         ...MOCK_COMPANIES[0], 
-         _id: id, 
-         Name: "Usuário Visitante (Erro API)", 
-         Description: "Não foi possível carregar os dados reais. Verifique a URL do Bubble." 
-       };
-    }
-
-    const json = await response.json();
     return mapBubbleToCompany(json.response);
 
-  } catch (error) {
-    console.error("Erro fatal no login:", error);
-    // Retorna um usuário de fallback IMEDIATO para liberar a tela
+  } catch (error: any) {
+    console.error("ERRO NO LOGIN:", error);
+    clearTimeout(timeoutId);
+    
+    // Retorna um objeto de erro visível para o usuário saber o que aconteceu
     return { 
         ...MOCK_COMPANIES[0], 
         _id: id, 
-        Name: "Modo Offline", 
-        Description: "Conexão lenta ou inexistente." 
+        Name: "Erro de Conexão", 
+        Description: `Não foi possível baixar os dados do Bubble. Detalhes: ${error.message}. Verifique se as 'Privacy Rules' no Bubble permitem visualização pública.` 
     };
   }
 };

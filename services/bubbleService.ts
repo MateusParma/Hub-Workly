@@ -20,14 +20,11 @@ const MOCK_COMPANIES: Company[] = [
 
 const cleanImageUrl = (url?: string) => {
   if (!url) return "";
-  // Bubble as vezes retorna //s3.amazonaws.com... sem o https:
   if (url.startsWith('//')) return `https:${url}`;
-  // Se já vier com http, mantem
   if (url.startsWith('http')) return url;
   return url;
 };
 
-// Mapeia um objeto Cupom do Bubble para nossa interface Coupon
 const mapBubbleToCoupon = (item: any): Coupon => {
     return {
         id: item._id,
@@ -41,15 +38,11 @@ const mapBubbleToCoupon = (item: any): Coupon => {
     };
 };
 
-// Mapeia os dados (seja de User ou Empresa) para nossa interface Company
-const mapBubbleToCompany = (item: any): Company => {
+// Mapeia os dados usando um dicionário opcional de categorias
+const mapBubbleToCompany = (item: any, categoryMap: Record<string, string> = {}): Company => {
   if (!item) return MOCK_COMPANIES[0];
 
-  // LOG DE DEBUG: Verifique no Console do navegador o que está chegando
-  console.log("🛠️ DADOS BRUTOS DO BUBBLE:", item);
-  
   let generatedCoupons: Coupon[] = [];
-  
   const listKey = item['Lista_cupons'] ? 'Lista_cupons' : 'Lista_Cupons';
   
   if (Array.isArray(item[listKey])) {
@@ -59,26 +52,41 @@ const mapBubbleToCompany = (item: any): Company => {
       }).filter((c): c is Coupon => c !== null);
   }
 
-  // Tratamento da Categoria
+  // Lógica Aprimorada de Categoria (Setor de Atuação)
   let category = "Parceiro";
-  const rawCategory = item['Setor de Atuação'] || item['Categoria'] || item['categoria'];
-  if (rawCategory) {
-      if (Array.isArray(rawCategory)) {
-          category = rawCategory.join(', ');
-      } else {
-          category = String(rawCategory);
+  
+  // 1. Tenta pegar do campo 'Setor de Atuação' (que geralmente é uma lista de IDs)
+  const rawSetor = item['Setor de Atuação'] || item['Setor'] || item['Categoria'];
+  
+  if (rawSetor) {
+      if (Array.isArray(rawSetor)) {
+          // Se for array, tenta mapear cada ID para o nome usando categoryMap
+          const names = rawSetor.map(id => categoryMap[id] || id);
+          // Filtra IDs que não foram resolvidos (ainda parecem IDs do Bubble)
+          const cleanNames = names.filter(n => typeof n === 'string' && (!n.includes('x') || n.length < 20));
+          
+          if (cleanNames.length > 0) {
+              category = cleanNames.join(', ');
+          }
+      } else if (typeof rawSetor === 'string') {
+          // Se for string única
+          if (categoryMap[rawSetor]) {
+              category = categoryMap[rawSetor];
+          } else if (!rawSetor.includes('x') || rawSetor.length < 20) {
+              category = rawSetor;
+          }
       }
   }
 
-  // Tenta extrair o EMAIL de forma robusta
-  const rawEmail = 
-      item['email'] || 
-      item['Email'] || 
-      item['authentication']?.email || 
-      item['Email_Candidatos'] || 
-      "";
+  // 2. Fallback: Se ainda parecer um ID ou for genérico, tenta outros campos de texto
+  if (category === "Parceiro" || (category.includes('x') && category.length > 20)) {
+     const textCandidates = [item['Categoria_Texto'], item['Setor_Texto'], item['Especialidade_Principal']];
+     const validText = textCandidates.find(c => c && typeof c === 'string' && c.length < 30 && !c.includes('x'));
+     if (validText) category = validText;
+  }
 
-  // Mapeamento EXATO baseado nas imagens do Bubble Editor
+  const rawEmail = item['email'] || item['Email'] || item['authentication']?.email || item['Email_Candidatos'] || "";
+
   return {
     _id: item._id,
     Name: item['Nome da empresa'] || item['Nome'] || item['name'] || "Empresa Sem Nome",
@@ -110,10 +118,8 @@ const fetchWithFallback = async (targetUrl: string, signal?: AbortSignal, method
     }
   } catch (e: any) {
     lastError = e;
-    console.warn("Fetch Error:", e);
   }
   
-  // Proxy fallback apenas para GET
   if (method === 'GET') {
       try {
         const proxy1 = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
@@ -121,8 +127,34 @@ const fetchWithFallback = async (targetUrl: string, signal?: AbortSignal, method
         if (response.ok) return await response.json();
       } catch (e) { lastError = e; }
   }
-
   return null; 
+};
+
+// Busca auxiliar para mapear IDs de Categoria -> Titulo
+const fetchCategoriesMap = async (): Promise<Record<string, string>> => {
+    const map: Record<string, string> = {};
+    try {
+        // Tenta buscar na tabela 'Categoria' ou 'Categorias'
+        let url = `${BUBBLE_API_ROOT}/Categoria`;
+        let result = await fetchWithFallback(url);
+        
+        if (!result || !result.response) {
+            url = `${BUBBLE_API_ROOT}/Categorias`;
+            result = await fetchWithFallback(url);
+        }
+
+        if (result && result.response && result.response.results) {
+            result.response.results.forEach((cat: any) => {
+                const name = cat['Titulo'] || cat['Name'] || cat['Nome'];
+                if (cat._id && name) {
+                    map[cat._id] = name;
+                }
+            });
+        }
+    } catch (e) {
+        console.warn("Erro ao buscar mapa de categorias", e);
+    }
+    return map;
 };
 
 // Helper para buscar em possíveis nomes de tabela
@@ -138,21 +170,15 @@ const fetchFromTableVariants = async (id: string, tableBaseName: string, signal?
     return null;
 };
 
-// Busca detalhes expandidos dos cupons
 const enrichCoupons = async (companyData: any, signal?: AbortSignal) => {
     const listKey = companyData['Lista_cupons'] ? 'Lista_cupons' : 'Lista_Cupons';
-    
     if (companyData[listKey] && Array.isArray(companyData[listKey]) && typeof companyData[listKey][0] === 'string') {
         try {
             const couponIds = companyData[listKey];
-            const couponPromises = couponIds.map((cId: string) => 
-                fetchFromTableVariants(cId, 'Cupom', signal)
-            );
+            const couponPromises = couponIds.map((cId: string) => fetchFromTableVariants(cId, 'Cupom', signal));
             const couponsDetails = await Promise.all(couponPromises);
             companyData[listKey] = couponsDetails.filter((c: any) => c !== null);
-        } catch (err) {
-            console.warn("Erro ao enriquecer cupons", err);
-        }
+        } catch (err) { console.warn("Erro ao enriquecer cupons", err); }
     }
     return companyData;
 }
@@ -164,57 +190,41 @@ export const fetchCompanyById = async (id: string): Promise<Company | null> => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000);
   
+  // Para um único user, não vamos buscar todo o mapa de categorias para não atrasar o load inicial,
+  // a menos que seja crítico. Aqui optamos por performance.
+  
   let companyData = null;
-
-  // 1. TENTATIVA: Buscar como USUÁRIO (caso o ID passado seja de user)
   const userObj = await fetchFromTableVariants(id, 'User', controller.signal);
 
   if (userObj) {
-      // Se encontrou user, verifica se tem link para empresa
       const empresaId = userObj['empresa'] || userObj['Empresa'];
-      
       if (empresaId) {
-          console.log("Encontrado User, buscando empresa vinculada:", empresaId);
           const empresaObj = await fetchFromTableVariants(empresaId, 'Empresa', controller.signal);
-          if (empresaObj) {
-              companyData = empresaObj;
-          } else {
-              companyData = userObj; 
-          }
+          companyData = empresaObj || userObj;
       } else {
-          // Se falhou user ou não tem empresa vinculada, tentamos buscar direto na tabela Empresa
-          if (!userObj['authentication']) {
-             const directCompany = await fetchFromTableVariants(id, 'Empresa', controller.signal);
-             companyData = directCompany || userObj;
-          } else {
-             companyData = userObj;
-          }
+          companyData = userObj['authentication'] ? userObj : (await fetchFromTableVariants(id, 'Empresa', controller.signal) || userObj);
       }
-  } 
-  else {
-      // 2. TENTATIVA: Buscar direto como EMPRESA
-      console.log("User não encontrado, buscando direto na tabela Empresa...");
+  } else {
       companyData = await fetchFromTableVariants(id, 'Empresa', controller.signal);
   }
 
   if (companyData) {
       companyData = await enrichCoupons(companyData, controller.signal);
+      
+      // Pequena otimização: buscar categorias map apenas se necessário poderia ser feito aqui, 
+      // mas vamos passar vazio por enquanto para o perfil logado.
       clearTimeout(timeoutId);
       return mapBubbleToCompany(companyData);
   }
 
   clearTimeout(timeoutId);
-  return { 
-      ...MOCK_COMPANIES[0], 
-      _id: id, 
-      Name: "Erro: Não encontrada", 
-      Description: "Não foi possível localizar este ID nas tabelas 'User' ou 'Empresa'. Verifique as Privacy Rules." 
-  };
+  return null;
 };
 
 export const fetchCompanies = async (): Promise<Company[]> => {
   const controller = new AbortController();
   try {
+      // 1. Busca Empresas
       let url = `${BUBBLE_API_ROOT}/Empresa?t=${Date.now()}`;
       let json = await fetchWithFallback(url, controller.signal);
       
@@ -223,44 +233,33 @@ export const fetchCompanies = async (): Promise<Company[]> => {
          json = await fetchWithFallback(url, controller.signal);
       }
 
+      // 2. Busca Categorias em paralelo para resolver IDs
+      const categoryMap = await fetchCategoriesMap();
+
       if (json && json.response && json.response.results) {
-          return json.response.results.map(mapBubbleToCompany);
+          // Passa o mapa para a função de mapeamento
+          return json.response.results.map((item: any) => mapBubbleToCompany(item, categoryMap));
       }
   } catch (error) {
-      console.warn("Erro ao listar empresas");
+      console.warn("Erro ao listar empresas", error);
   }
   return MOCK_COMPANIES;
 };
 
 export const updateCompany = async (id: string, data: Partial<Company>): Promise<boolean> => {
   if (!id || id === 'mock' || id.includes('Erro')) return false;
-
   const payload: any = {};
-  
   if (data.Name) payload['Nome da empresa'] = data.Name;
   if (data.Phone) payload['Contato'] = data.Phone;
   if (data.Website) payload['website'] = data.Website;
   if (data.Address) payload['Morada'] = data.Address; 
   if (data.Description) payload['Descricao'] = data.Description;
-  
-  // Campo de Logo:
-  // Se for Base64 (data:image...), tentamos enviar.
-  // Nota: O Bubble Data API para campos 'image' normalmente espera uma URL (S3).
-  // Porém, algumas configurações aceitam conteúdo encoded. Se falhar, o ideal é usar um plugin de upload.
   if (data.Logo) payload['Logo'] = data.Logo;
-
-  console.log("Enviando Update para Empresa:", id, payload);
-
   try {
       await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${id}`, undefined, 'PATCH', payload);
       return true;
-  } catch (e) {
-      console.warn("Falha ao atualizar tabela Empresa.");
-      return false;
-  }
+  } catch (e) { return false; }
 };
-
-// --- FUNÇÕES DE CUPOM ---
 
 export const createCoupon = async (companyId: string, couponData: any): Promise<string | null> => {
     const payload = {
@@ -272,23 +271,15 @@ export const createCoupon = async (companyId: string, couponData: any): Promise<
         ativo: true,
         Dono: companyId 
     };
-
-    console.log("Criando cupom...", payload);
     const result = await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom`, undefined, 'POST', payload);
-    
     if (result && result.id) {
         const newCouponId = result.id;
         try {
-            const company = await fetchCompanyById(companyId);
+            const company = await fetchCompanyById(companyId); // Isso aqui pode ser otimizado no futuro
             const currentCoupons = company?.Coupons?.map(c => c.id) || [];
             const newCouponsList = [...currentCoupons, newCouponId];
-            
-            await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${companyId}`, undefined, 'PATCH', {
-                "Lista_cupons": newCouponsList
-            });
-        } catch (err) {
-            console.warn("Cupom criado, erro ao vincular na lista.", err);
-        }
+            await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${companyId}`, undefined, 'PATCH', { "Lista_cupons": newCouponsList });
+        } catch (err) {}
         return newCouponId;
     }
     return null;
@@ -302,7 +293,6 @@ export const updateCoupon = async (couponId: string, couponData: any): Promise<b
     if (couponData.maxUses) payload.max_usos = Number(couponData.maxUses);
     if (couponData.expiryDate) payload.validade = couponData.expiryDate;
     if (couponData.status) payload.ativo = (couponData.status === 'active');
-
     const result = await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom/${couponId}`, undefined, 'PATCH', payload);
     return !!result;
 };

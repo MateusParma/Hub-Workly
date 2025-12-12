@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import CompanyCard from './CompanyCard';
-import CouponModal from './CouponModal';
+import CompanyDetailsModal from './CompanyDetailsModal';
 import { Company } from '../types';
 import { fetchCompanies } from '../services/bubbleService';
 import { Search, Filter, Loader2 } from 'lucide-react';
@@ -14,7 +14,7 @@ const PartnerDirectory: React.FC<PartnerDirectoryProps> = ({ userIsPro }) => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('Todos');
-  const [selectedCompanyForCoupon, setSelectedCompanyForCoupon] = useState<Company | null>(null);
+  const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -35,7 +35,17 @@ const PartnerDirectory: React.FC<PartnerDirectoryProps> = ({ userIsPro }) => {
     });
   }, [companies, searchTerm, selectedCategory]);
 
-  const categories = ['Todos', ...Array.from(new Set(companies.map(c => c.Category)))];
+  // Gera lista de categorias removendo IDs do Bubble (ex: 1749x...)
+  const categories = useMemo(() => {
+    const rawCategories = companies.map(c => c.Category).filter(Boolean);
+    const cleanCategories = rawCategories.filter(cat => {
+        // Remove se for um ID do bubble (geralmente longos e numéricos ou contendo 'x')
+        const isBubbleId = cat.length > 20 && cat.includes('x') && /\d/.test(cat);
+        const isTooLong = cat.length > 30; 
+        return !isBubbleId && !isTooLong && cat !== 'Parceiro';
+    });
+    return ['Todos', ...Array.from(new Set(cleanCategories))];
+  }, [companies]);
 
   return (
     <div>
@@ -58,22 +68,24 @@ const PartnerDirectory: React.FC<PartnerDirectoryProps> = ({ userIsPro }) => {
             />
           </div>
           
-          <div className="flex items-center overflow-x-auto space-x-2 pb-2 md:pb-0 hide-scrollbar">
-            <Filter className="text-slate-400 w-5 h-5 mr-2 flex-shrink-0" />
-            {categories.map(cat => (
-              <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                  selectedCategory === cat 
-                    ? 'bg-blue-600 text-white shadow-md' 
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
+          {categories.length > 1 && (
+            <div className="flex items-center overflow-x-auto space-x-2 pb-2 md:pb-0 hide-scrollbar max-w-full md:max-w-2xl">
+                <Filter className="text-slate-400 w-5 h-5 mr-2 flex-shrink-0" />
+                {categories.map(cat => (
+                <button
+                    key={cat}
+                    onClick={() => setSelectedCategory(cat)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                    selectedCategory === cat 
+                        ? 'bg-blue-600 text-white shadow-md' 
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                >
+                    {cat}
+                </button>
+                ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -90,7 +102,7 @@ const PartnerDirectory: React.FC<PartnerDirectoryProps> = ({ userIsPro }) => {
               key={company._id} 
               company={company} 
               userIsPro={userIsPro}
-              onOpenCoupon={(c) => setSelectedCompanyForCoupon(c)}
+              onOpenDetails={(c) => setSelectedCompany(c)}
             />
           ))}
         </div>
@@ -102,11 +114,11 @@ const PartnerDirectory: React.FC<PartnerDirectoryProps> = ({ userIsPro }) => {
         </div>
       )}
 
-      {/* Coupon Modal */}
-      <CouponModal 
-        company={selectedCompanyForCoupon} 
-        isOpen={!!selectedCompanyForCoupon} 
-        onClose={() => setSelectedCompanyForCoupon(null)} 
+      {/* Company Details Modal */}
+      <CompanyDetailsModal 
+        company={selectedCompany} 
+        isOpen={!!selectedCompany} 
+        onClose={() => setSelectedCompany(null)} 
       />
     </div>
   );

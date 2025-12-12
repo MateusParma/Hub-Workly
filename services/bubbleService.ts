@@ -1,4 +1,4 @@
-import { Company, BubbleResponse, Coupon } from '../types';
+import { Company, BubbleResponse, Coupon, DashboardStats } from '../types';
 
 // CONFIGURAÇÃO: Base da URL
 const BUBBLE_API_ROOT = "https://workly.pt/version-test/api/1.1/obj";
@@ -33,7 +33,7 @@ const mapBubbleToCoupon = (item: any): Coupon => {
         discountValue: item.desconto || item.Discount || '',
         expiryDate: item.validade || undefined,
         maxUses: item.max_usos || undefined,
-        uses: item.usos_atuais || 0,
+        uses: item.usos_atuais || item.Usos || 0,
         status: item.ativo === false ? 'paused' : 'active'
     };
 };
@@ -98,7 +98,8 @@ const mapBubbleToCompany = (item: any, categoryMap: Record<string, string> = {})
     Address: item['Morada'] || item['morada'] || item['Endereco'] || "",
     Email: rawEmail,
     IsPartner: true, 
-    Coupons: generatedCoupons
+    Coupons: generatedCoupons,
+    CreatedDate: item['Created Date'] || item['Created_Date']
   };
 };
 
@@ -190,9 +191,6 @@ export const fetchCompanyById = async (id: string): Promise<Company | null> => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000);
   
-  // Para um único user, não vamos buscar todo o mapa de categorias para não atrasar o load inicial,
-  // a menos que seja crítico. Aqui optamos por performance.
-  
   let companyData = null;
   const userObj = await fetchFromTableVariants(id, 'User', controller.signal);
 
@@ -210,11 +208,9 @@ export const fetchCompanyById = async (id: string): Promise<Company | null> => {
 
   if (companyData) {
       companyData = await enrichCoupons(companyData, controller.signal);
-      
-      // Pequena otimização: buscar categorias map apenas se necessário poderia ser feito aqui, 
-      // mas vamos passar vazio por enquanto para o perfil logado.
+      const categoryMap = await fetchCategoriesMap(); // Resolve categoria para o user logado tbm
       clearTimeout(timeoutId);
-      return mapBubbleToCompany(companyData);
+      return mapBubbleToCompany(companyData, categoryMap);
   }
 
   clearTimeout(timeoutId);
@@ -246,6 +242,67 @@ export const fetchCompanies = async (): Promise<Company[]> => {
   return MOCK_COMPANIES;
 };
 
+// NOVA FUNÇÃO: Busca estatísticas reais do sistema
+export const fetchDashboardStats = async (): Promise<DashboardStats> => {
+    const controller = new AbortController();
+    
+    // Default stats
+    const stats: DashboardStats = {
+        totalPartners: 0,
+        totalCoupons: 0,
+        totalRedemptions: 0,
+        recentPartners: [],
+        topCategories: []
+    };
+
+    try {
+        // Fetch Parallel: Empresas, Cupons, Categorias
+        const [companiesData, couponsData, categoryMap] = await Promise.all([
+            fetchCompanies(),
+            fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom`, controller.signal),
+            fetchCategoriesMap()
+        ]);
+
+        // Process Companies
+        if (companiesData) {
+            stats.totalPartners = companiesData.length;
+            
+            // Recent Partners (Last 5 based on created date if available, or just first 5)
+            stats.recentPartners = companiesData
+                .sort((a, b) => (b.CreatedDate || '').localeCompare(a.CreatedDate || ''))
+                .slice(0, 5);
+
+            // Calculate Categories Distribution
+            const catCounts: Record<string, number> = {};
+            companiesData.forEach(c => {
+                const cat = c.Category || 'Outros';
+                catCounts[cat] = (catCounts[cat] || 0) + 1;
+            });
+            
+            stats.topCategories = Object.entries(catCounts)
+                .map(([name, count]) => ({ name, count }))
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 4); // Top 4
+        }
+
+        // Process Coupons (Direct Table Access for Accuracy)
+        if (couponsData && couponsData.response && couponsData.response.results) {
+            const allCoupons = couponsData.response.results;
+            stats.totalCoupons = allCoupons.length;
+            
+            // Sum 'usos_atuais'
+            stats.totalRedemptions = allCoupons.reduce((acc: number, curr: any) => {
+                return acc + (Number(curr.usos_atuais) || Number(curr.Usos) || 0);
+            }, 0);
+        }
+
+    } catch (e) {
+        console.warn("Erro ao calcular dashboard stats", e);
+    }
+
+    return stats;
+};
+
 export const updateCompany = async (id: string, data: Partial<Company>): Promise<boolean> => {
   if (!id || id === 'mock' || id.includes('Erro')) return false;
   const payload: any = {};
@@ -269,13 +326,15 @@ export const createCoupon = async (companyId: string, couponData: any): Promise<
         max_usos: Number(couponData.maxUses) || 0,
         validade: couponData.expiryDate,
         ativo: true,
-        Dono: companyId 
+        Dono: companyId,
+        usos_atuais: 0
     };
     const result = await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom`, undefined, 'POST', payload);
     if (result && result.id) {
         const newCouponId = result.id;
         try {
-            const company = await fetchCompanyById(companyId); // Isso aqui pode ser otimizado no futuro
+            // Vincula à lista da empresa
+            const company = await fetchCompanyById(companyId); 
             const currentCoupons = company?.Coupons?.map(c => c.id) || [];
             const newCouponsList = [...currentCoupons, newCouponId];
             await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${companyId}`, undefined, 'PATCH', { "Lista_cupons": newCouponsList });
@@ -293,6 +352,7 @@ export const updateCoupon = async (couponId: string, couponData: any): Promise<b
     if (couponData.maxUses) payload.max_usos = Number(couponData.maxUses);
     if (couponData.expiryDate) payload.validade = couponData.expiryDate;
     if (couponData.status) payload.ativo = (couponData.status === 'active');
+
     const result = await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom/${couponId}`, undefined, 'PATCH', payload);
     return !!result;
 };

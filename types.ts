@@ -1,3 +1,4 @@
+
 export enum UserTier {
   FREE = 'FREE',
   PRO = 'PRO'
@@ -10,7 +11,7 @@ export interface Coupon {
   discountValue: string;
   expiryDate?: string;
   maxUses?: number;
-  uses?: number;
+  uses?: number; // Usos atuais vindos do Bubble
   status?: 'active' | 'expired' | 'paused';
 }
 
@@ -27,6 +28,15 @@ export interface Company {
   Email?: string; // Pode vir do User vinculado ou da empresa se tiver campo
   IsPartner: boolean;
   Coupons?: Coupon[]; // Lista de cupons da tabela Empresa
+  CreatedDate?: string; // Data de criação para ordenação
+}
+
+export interface DashboardStats {
+  totalPartners: number;
+  totalCoupons: number;
+  totalRedemptions: number;
+  recentPartners: Company[];
+  topCategories: { name: string; count: number }[];
 }
 
 export interface BubbleResponse<T> {

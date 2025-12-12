@@ -28,6 +28,7 @@ export interface Company {
   Description: string;
   Logo?: string; 
   Category: string;
+  Zone?: string; // Nova propriedade para Zonas
   Website?: string;
   Phone?: string;
   Address?: string;

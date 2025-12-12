@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { X, CheckCircle, AlertCircle, Camera, Loader2, Upload, FileImage, RefreshCw, Scan } from 'lucide-react';
+import { X, CheckCircle, AlertCircle, Camera, Loader2, Upload, RefreshCw, Scan, Image as ImageIcon } from 'lucide-react';
 import { processQrCode } from '../services/bubbleService';
 import { Coupon, Company } from '../types';
 
@@ -18,6 +18,7 @@ const QRScannerModal: React.FC<QRScannerModalProps> = ({ isOpen, onClose, curren
   const [isCameraActive, setIsCameraActive] = useState(false);
   
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const startCamera = async () => {
       setCameraError(null);
@@ -115,6 +116,12 @@ const QRScannerModal: React.FC<QRScannerModalProps> = ({ isOpen, onClose, curren
       onClose();
   };
 
+  const triggerCapture = () => {
+      // Parar câmera de stream antes de abrir input de arquivo (evita conflito em alguns androids)
+      if (isCameraActive) stopCamera();
+      fileInputRef.current?.click();
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
@@ -129,6 +136,8 @@ const QRScannerModal: React.FC<QRScannerModalProps> = ({ isOpen, onClose, curren
           setScanResult({ valid: false, message: "Não foi possível ler um QR Code nesta imagem." });
           setIsProcessing(false);
       }
+      // Limpa input
+      e.target.value = '';
   };
 
   if (!isOpen) return null;
@@ -208,7 +217,7 @@ const QRScannerModal: React.FC<QRScannerModalProps> = ({ isOpen, onClose, curren
                         {!isCameraActive && !isProcessing && (
                             <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500">
                                 <Camera className="w-16 h-16 mb-2 opacity-50" />
-                                <p className="text-sm">Câmera desligada</p>
+                                <p className="text-sm">Aguardando...</p>
                             </div>
                         )}
                         
@@ -234,36 +243,70 @@ const QRScannerModal: React.FC<QRScannerModalProps> = ({ isOpen, onClose, curren
                         )}
                     </div>
 
-                    {/* Controles */}
+                    {/* Controles Principais */}
                     {!isCameraActive ? (
-                        <div className="flex gap-4 w-full">
+                        <div className="grid grid-cols-2 gap-3 w-full">
+                            {/* Botão Câmera (Stream) */}
                             <button 
                                 onClick={startCamera}
-                                className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-900/20 flex items-center justify-center transition-all"
+                                className="col-span-2 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-900/20 flex items-center justify-center transition-all"
                             >
                                 <Camera className="w-5 h-5 mr-2" />
-                                Ativar Câmera
+                                Ler com Câmera
                             </button>
                             
-                            <label className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold shadow-lg cursor-pointer flex items-center justify-center transition-all border border-slate-700">
-                                <Upload className="w-5 h-5 mr-2" />
-                                Enviar Foto
-                                <input type="file" className="hidden" accept="image/*" onChange={handleFileUpload} />
-                            </label>
+                            {/* Botão Capturar Foto (Input File Native Camera) */}
+                            <button 
+                                onClick={triggerCapture}
+                                className="py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold shadow-lg border border-slate-700 flex items-center justify-center transition-all"
+                            >
+                                <Camera className="w-5 h-5 mr-2 text-green-400" />
+                                Tirar Foto
+                            </button>
+                            
+                            {/* Botão Upload Galeria */}
+                            <button 
+                                onClick={() => fileInputRef.current?.click()}
+                                className="py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold shadow-lg border border-slate-700 flex items-center justify-center transition-all"
+                            >
+                                <ImageIcon className="w-5 h-5 mr-2 text-yellow-400" />
+                                Galeria
+                            </button>
                         </div>
                     ) : (
-                        <div className="w-full">
-                            <p className="text-center text-slate-400 text-sm mb-4 animate-pulse">
-                                Aponte a câmera para o código QR do cliente
-                            </p>
+                        <div className="w-full grid grid-cols-2 gap-3">
+                             {/* Instrução */}
+                            <div className="col-span-2 text-center text-slate-400 text-sm mb-2 animate-pulse">
+                                Aponte para o QR Code
+                            </div>
+                            
+                            {/* Botão Parar Câmera */}
                             <button 
                                 onClick={stopCamera}
-                                className="w-full py-3 bg-red-600/10 hover:bg-red-600/20 text-red-500 border border-red-900/50 rounded-xl font-bold transition-all"
+                                className="col-span-1 py-3 bg-red-600/10 hover:bg-red-600/20 text-red-500 border border-red-900/50 rounded-xl font-bold transition-all"
                             >
                                 Parar Câmera
                             </button>
+
+                             {/* Botão Capturar Foto (Alternativa) */}
+                            <button 
+                                onClick={triggerCapture}
+                                className="col-span-1 py-3 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 rounded-xl font-bold transition-all flex items-center justify-center"
+                            >
+                                <Camera className="w-4 h-4 mr-2" /> Foto
+                            </button>
                         </div>
                     )}
+
+                    {/* Hidden Input for Capture/Upload */}
+                    <input 
+                        type="file" 
+                        ref={fileInputRef}
+                        accept="image/*" 
+                        capture="environment"
+                        className="hidden" 
+                        onChange={handleFileUpload} 
+                    />
 
                 </div>
             )}

@@ -1,9 +1,10 @@
+
 import React, { useEffect, useState, useMemo } from 'react';
 import CompanyCard from './CompanyCard';
 import CompanyDetailsModal from './CompanyDetailsModal';
 import { Company } from '../types';
 import { fetchCompanies } from '../services/bubbleService';
-import { Search, Filter, Loader2 } from 'lucide-react';
+import { Search, Filter, Loader2, MapPin } from 'lucide-react';
 
 interface PartnerDirectoryProps {
   userIsPro: boolean;
@@ -14,6 +15,7 @@ const PartnerDirectory: React.FC<PartnerDirectoryProps> = ({ userIsPro }) => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('Todos');
+  const [selectedZone, setSelectedZone] = useState<string>('Todas');
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
 
   useEffect(() => {
@@ -31,9 +33,13 @@ const PartnerDirectory: React.FC<PartnerDirectoryProps> = ({ userIsPro }) => {
       const matchesSearch = company.Name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                             company.Description.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCategory = selectedCategory === 'Todos' || company.Category === selectedCategory;
-      return matchesSearch && matchesCategory;
+      
+      const companyZone = company.Zone || 'Indefinida';
+      const matchesZone = selectedZone === 'Todas' || companyZone === selectedZone;
+
+      return matchesSearch && matchesCategory && matchesZone;
     });
-  }, [companies, searchTerm, selectedCategory]);
+  }, [companies, searchTerm, selectedCategory, selectedZone]);
 
   // Gera lista de categorias removendo IDs do Bubble (ex: 1749x...)
   const categories = useMemo(() => {
@@ -45,6 +51,12 @@ const PartnerDirectory: React.FC<PartnerDirectoryProps> = ({ userIsPro }) => {
         return !isBubbleId && !isTooLong && cat !== 'Parceiro';
     });
     return ['Todos', ...Array.from(new Set(cleanCategories))];
+  }, [companies]);
+
+  // Gera lista de Zonas únicas
+  const zones = useMemo(() => {
+      const rawZones = companies.map(c => c.Zone).filter(Boolean);
+      return ['Todas', ...Array.from(new Set(rawZones))];
   }, [companies]);
 
   return (
@@ -67,26 +79,43 @@ const PartnerDirectory: React.FC<PartnerDirectoryProps> = ({ userIsPro }) => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          
-          {categories.length > 1 && (
-            <div className="flex items-center overflow-x-auto space-x-2 pb-2 md:pb-0 hide-scrollbar max-w-full md:max-w-2xl">
+
+          {/* Filtro de Zonas (Dropdown) */}
+          {zones.length > 1 && (
+             <div className="relative min-w-[150px]">
+                <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500 w-4 h-4" />
+                <select
+                    value={selectedZone}
+                    onChange={(e) => setSelectedZone(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-slate-50 text-slate-700 appearance-none cursor-pointer hover:bg-slate-100 transition-colors"
+                >
+                    {zones.map(zone => (
+                        <option key={zone} value={zone}>{zone === 'Todas' ? 'Todas as Zonas' : zone}</option>
+                    ))}
+                </select>
+             </div>
+          )}
+        </div>
+        
+        {/* Filtro de Categorias (Pills) */}
+        {categories.length > 1 && (
+            <div className="flex items-center overflow-x-auto space-x-2 mt-4 pb-2 hide-scrollbar">
                 <Filter className="text-slate-400 w-5 h-5 mr-2 flex-shrink-0" />
                 {categories.map(cat => (
                 <button
                     key={cat}
                     onClick={() => setSelectedCategory(cat)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${
                     selectedCategory === cat 
-                        ? 'bg-blue-600 text-white shadow-md' 
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        ? 'bg-slate-800 text-white border-slate-800 shadow-md' 
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                     }`}
                 >
                     {cat}
                 </button>
                 ))}
             </div>
-          )}
-        </div>
+        )}
       </div>
 
       {/* Content Grid */}

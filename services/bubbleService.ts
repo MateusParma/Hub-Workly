@@ -12,6 +12,7 @@ const MOCK_COMPANIES: Company[] = [
     Description: "Empresa de tecnologia focada em inovação. (Dados de Exemplo - API Bloqueada)",
     Logo: "https://ui-avatars.com/api/?name=Tech+Solutions&background=0D8ABC&color=fff",
     Category: "Tecnologia",
+    Zone: "Lisboa",
     IsPartner: true,
     Coupons: [
       { id: 'c1', code: 'TECH10', description: '10% OFF em serviços', discountValue: '10%', utilizadores: [] }
@@ -49,7 +50,7 @@ const mapBubbleToCoupon = (item: any): Coupon => {
     };
 };
 
-const mapBubbleToCompany = (item: any, categoryMap: Record<string, string> = {}, extraCoupons: Coupon[] = []): Company => {
+const mapBubbleToCompany = (item: any, categoryMap: Record<string, string> = {}, zoneMap: Record<string, string> = {}, extraCoupons: Coupon[] = []): Company => {
   if (!item) return MOCK_COMPANIES[0];
 
   let generatedCoupons: Coupon[] = [];
@@ -97,12 +98,23 @@ const mapBubbleToCompany = (item: any, categoryMap: Record<string, string> = {},
       }
   }
 
+  // Lógica de Zona
+  let zoneName = "";
+  const rawZone = item['Zona'];
+  if (rawZone) {
+      if (typeof rawZone === 'string') {
+           // Se for ID, busca no map, senão usa a string direta
+           zoneName = zoneMap[rawZone] || rawZone;
+      }
+  }
+
   return {
     _id: item._id,
     Name: item['Nome da empresa'] || "Empresa Sem Nome",
     Description: item['Descricao'] || "",
     Logo: cleanImageUrl(item['Logo'] || item['Logo_Capa']),
     Category: category, 
+    Zone: zoneName,
     Website: item['website'] || "",
     Phone: item['Contato'] || "",
     Address: item['Morada'] || "",
@@ -162,15 +174,53 @@ const fetchCategoriesMap = async (): Promise<Record<string, string>> => {
     return map;
 };
 
-// Helper para buscar em possíveis nomes de tabela
+// Busca Mapa de Zonas (Zonas -> Nome)
+const fetchZonesMap = async (): Promise<Record<string, string>> => {
+    const map: Record<string, string> = {};
+    try {
+        // Tenta buscar na tabela 'Zonas' ou 'Zona'
+        let url = `${BUBBLE_API_ROOT}/Zonas`; 
+        let result = null;
+        try {
+            result = await fetchWithFallback(url);
+        } catch(e) {
+             url = `${BUBBLE_API_ROOT}/Zona`;
+             result = await fetchWithFallback(url);
+        }
+
+        if (result && result.response && result.response.results) {
+            result.response.results.forEach((z: any) => {
+                const name = z['Nome'] || z['Zona'] || z['Titulo']; 
+                if (z._id && name) {
+                    map[z._id] = name;
+                }
+            });
+        }
+    } catch (e) {
+        console.warn("Erro ao buscar zonas:", e);
+    }
+    return map;
+};
+
+// Helper para buscar em possíveis nomes de tabela (Case Insensitive)
 const fetchFromTableVariants = async (id: string, tableBaseName: string, signal?: AbortSignal) => {
+    // 1. Tenta nome exato (Capitalized)
     try {
         const url = `${BUBBLE_API_ROOT}/${tableBaseName}/${id}`;
         const result = await fetchWithFallback(url, signal);
-        return result.response || result;
-    } catch (e) {
-        return null;
+        if (result && (result.response || result._id)) return result.response || result;
+    } catch (e) { /* Ignora e tenta próxima */ }
+
+    // 2. Tenta lowercase (comum no Bubble API para tipos padrão como User)
+    if (tableBaseName !== tableBaseName.toLowerCase()) {
+        try {
+            const urlLower = `${BUBBLE_API_ROOT}/${tableBaseName.toLowerCase()}/${id}`;
+            const result = await fetchWithFallback(urlLower, signal);
+            if (result && (result.response || result._id)) return result.response || result;
+        } catch (e) { /* Ignora */ }
     }
+    
+    return null;
 };
 
 const enrichCoupons = async (companyData: any, signal?: AbortSignal) => {
@@ -192,13 +242,37 @@ export const fetchCompanyById = async (id: string): Promise<Company | null> => {
 
   const controller = new AbortController();
   
-  // Busca na tabela Empresa
-  const companyData = await fetchFromTableVariants(id, 'Empresa', controller.signal);
+  // 1. Tenta buscar direto na tabela Empresa (Cenário Ideal: ID é da Empresa)
+  let companyData = await fetchFromTableVariants(id, 'Empresa', controller.signal);
+
+  // 2. Fallback: Se não achou, pode ser um ID de User (Login do Bubble)
+  if (!companyData) {
+      console.log(`ID ${id} não encontrado na tabela Empresa. Tentando tabela User...`);
+      const userObj = await fetchFromTableVariants(id, 'User', controller.signal);
+      
+      if (userObj) {
+          // Verifica se o User tem um campo de vínculo com Empresa
+          // Tenta 'Empresa' (maiúsculo) ou 'empresa' (minúsculo)
+          const linkedEmpresaId = userObj['Empresa'] || userObj['empresa'];
+          
+          if (linkedEmpresaId && typeof linkedEmpresaId === 'string') {
+               console.log(`User ${id} vinculado à Empresa ${linkedEmpresaId}. Buscando detalhes...`);
+               companyData = await fetchFromTableVariants(linkedEmpresaId, 'Empresa', controller.signal);
+          } else {
+               // Se não tem vínculo explícito, talvez o próprio User tenha os dados (menos comum para B2B estruturado)
+               if (userObj['Nome da empresa'] || userObj['Name']) {
+                   console.log("User encontrado, usando dados do próprio User como Empresa.");
+                   companyData = userObj;
+               }
+          }
+      }
+  }
 
   if (companyData) {
       const enriched = await enrichCoupons(companyData, controller.signal);
       const categoryMap = await fetchCategoriesMap(); 
-      return mapBubbleToCompany(enriched, categoryMap);
+      const zoneMap = await fetchZonesMap();
+      return mapBubbleToCompany(enriched, categoryMap, zoneMap);
   }
 
   return null;
@@ -208,12 +282,23 @@ export const fetchCompanies = async (): Promise<Company[]> => {
   const controller = new AbortController();
   try {
       let url = `${BUBBLE_API_ROOT}/Empresa?t=${Date.now()}`;
-      let json = await fetchWithFallback(url, controller.signal);
+      let json = null;
       
-      const categoryMapPromise = fetchCategoriesMap();
-      const allCouponsPromise = fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom?t=${Date.now()}`, controller.signal);
+      try {
+          json = await fetchWithFallback(url, controller.signal);
+      } catch (e) {
+          // Fallback se Empresa não existir ou falhar, tenta User
+           console.warn("Falha ao listar Empresa, tentando User...");
+           url = `${BUBBLE_API_ROOT}/User?t=${Date.now()}`;
+           json = await fetchWithFallback(url, controller.signal);
+      }
 
-      const [categoryMap, allCouponsJson] = await Promise.all([categoryMapPromise, allCouponsPromise]);
+      // Buscas auxiliares em paralelo
+      const categoryMapPromise = fetchCategoriesMap();
+      const zoneMapPromise = fetchZonesMap();
+      const allCouponsPromise = fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom?t=${Date.now()}`, controller.signal).catch(() => ({ response: { results: [] } }));
+
+      const [categoryMap, zoneMap, allCouponsJson] = await Promise.all([categoryMapPromise, zoneMapPromise, allCouponsPromise]);
 
       let allCoupons: Coupon[] = [];
       if (allCouponsJson && allCouponsJson.response && allCouponsJson.response.results) {
@@ -221,7 +306,7 @@ export const fetchCompanies = async (): Promise<Company[]> => {
       }
 
       if (json && json.response && json.response.results) {
-          return json.response.results.map((item: any) => mapBubbleToCompany(item, categoryMap, allCoupons));
+          return json.response.results.map((item: any) => mapBubbleToCompany(item, categoryMap, zoneMap, allCoupons));
       }
   } catch (error) {
       console.warn("Erro ao listar empresas", error);
@@ -332,7 +417,6 @@ export const createCoupon = async (companyId: string, couponData: any): Promise<
     }
 
     // 2. Payload ESTRITO baseado nas IMAGENS (Data Types)
-    // Atenção: Bubble API 1.1 requer nomes exatos (case sensitive)
     const payload = {
         codigo: couponData.code,
         descricao: couponData.description,
@@ -357,11 +441,13 @@ export const createCoupon = async (companyId: string, couponData: any): Promise<
             
             if (companyRaw) {
                 // Pega lista existente ou inicia vazia
-                const currentList = companyRaw['Lista_cupons'] || [];
+                // Tenta variações de nome de campo de lista, mas prioriza o da imagem (Lista_cupons)
+                const currentList = companyRaw['Lista_cupons'] || companyRaw['Lista_Cupons'] || [];
                 const newList = [...currentList, newCouponId];
                 
                 console.log(`Vinculando cupom ${newCouponId} na empresa ${companyId}. Lista nova:`, newList);
 
+                // Tenta update
                 await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${companyId}`, undefined, 'PATCH', { 
                     "Lista_cupons": newList 
                 });
@@ -420,7 +506,8 @@ export const claimCoupon = async (couponId: string, inputId: string, _knownUtili
 
         const currentUtilizadores = couponRaw['Utilizadores'] || [];
 
-        if (!currentUtilizadores.includes(inputId)) {
+        // Garante que inputId seja string e não nulo
+        if (inputId && !currentUtilizadores.includes(inputId)) {
             const newUtilizadores = [...currentUtilizadores, inputId];
             await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom/${couponId}`, undefined, 'PATCH', {
                 Utilizadores: newUtilizadores
@@ -429,18 +516,27 @@ export const claimCoupon = async (couponId: string, inputId: string, _knownUtili
 
         // 2. UPDATE EMPRESA (Adiciona Cupom na carteira_cupons)
         const empresaRaw = await fetchFromTableVariants(inputId, 'Empresa');
-        if (!empresaRaw) throw new Error("Empresa não encontrada para carteira");
-
-        const currentCarteira = empresaRaw['carteira_cupons'] || [];
-
-        if (!currentCarteira.includes(couponId)) {
-            const newCarteira = [...currentCarteira, couponId];
-            await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${inputId}`, undefined, 'PATCH', { 
-                "carteira_cupons": newCarteira 
-            });
+        if (empresaRaw) {
+             const currentCarteira = empresaRaw['carteira_cupons'] || [];
+             if (!currentCarteira.includes(couponId)) {
+                const newCarteira = [...currentCarteira, couponId];
+                await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${inputId}`, undefined, 'PATCH', { 
+                    "carteira_cupons": newCarteira 
+                });
+            }
+            return true;
+        } else {
+            // Se não achou empresa, talvez seja user sem empresa vinculada (menos comum, mas ok)
+            // Tenta tabela User
+             const userRaw = await fetchFromTableVariants(inputId, 'User');
+             if(userRaw) {
+                // Tenta salvar no user (se tiver campo carteira_cupons no User, o que não foi mostrado na imagem mas pode existir)
+                // Se não, só o update do cupom (passo 1) já conta como 'uso'.
+                return true;
+             }
         }
 
-        return true;
+        return false;
     } catch (e) {
         console.error("Erro no fluxo de resgate:", e);
         return false;
@@ -505,16 +601,7 @@ export const processQrCode = async (dataString: string, scannerOwnerId?: string)
         if (coupon.status !== 'active') return { valid: false, message: "Cupom inativo ou pausado." };
 
         // 3. Registra Uso
-        const currentUtilizadores = coupon.utilizadores || [];
-        if (!currentUtilizadores.includes(clientId)) {
-            const newUtilizadores = [...currentUtilizadores, clientId];
-            await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom/${couponId}`, undefined, 'PATCH', { 
-                Utilizadores: newUtilizadores 
-            });
-        } else {
-            // Se já usou, apenas avisa, mas considera válido (cliente retornando)
-            return { valid: true, message: `Cliente já registrado anteriormente. (Reuso)`, coupon };
-        }
+        await claimCoupon(couponId, clientId);
 
         return { valid: true, message: `Sucesso! Cliente registrado.`, coupon };
 

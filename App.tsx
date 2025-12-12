@@ -1,4 +1,4 @@
-import React, { useState, useEffect, ReactNode, ErrorInfo, Component } from 'react';
+import React, { useState, useEffect, ReactNode, ErrorInfo } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import PartnerDirectory from './components/PartnerDirectory';
@@ -6,7 +6,7 @@ import MyCoupons from './components/MyCoupons';
 import Settings from './components/Settings';
 import { Company } from './types';
 import { fetchCompanyById } from './services/bubbleService';
-import { Loader2, LogIn, AlertTriangle, Terminal } from 'lucide-react';
+import { Loader2, LogIn, AlertTriangle, Terminal, Search } from 'lucide-react';
 
 interface ErrorBoundaryProps {
   children?: ReactNode;
@@ -17,7 +17,7 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = {
     hasError: false,
     error: null
@@ -62,9 +62,35 @@ const AppContent: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<Company | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [debugLog, setDebugLog] = useState<string[]>([]);
+  const [manualUid, setManualUid] = useState('');
 
   const addLog = (msg: string) => {
     setDebugLog(prev => [...prev, `${new Date().toLocaleTimeString()} - ${msg}`]);
+  };
+
+  const loadUser = async (uid: string) => {
+    setAuthLoading(true);
+    // Limpa o UID de caracteres indesejados (aspas, espaços)
+    const cleanUid = uid.replace(/['"\s]/g, '');
+    addLog(`Buscando dados para ID: ${cleanUid}`);
+    
+    try {
+      const company = await fetchCompanyById(cleanUid);
+      if (company) {
+        setCurrentUser(company);
+        if (company.Name.includes("Erro")) {
+          addLog("⚠️ Dados retornaram com erro.");
+        } else {
+          addLog("✅ Dados carregados com sucesso!");
+        }
+      } else {
+        addLog("❌ Nenhum dado encontrado.");
+      }
+    } catch (e: any) {
+      addLog(`Erro fatal no loadUser: ${e.message}`);
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -72,44 +98,28 @@ const AppContent: React.FC = () => {
     addLog("Iniciando App...");
 
     const initSession = async () => {
-      try {
-        const params = new URLSearchParams(window.location.search);
-        const uid = params.get('uid');
+      const params = new URLSearchParams(window.location.search);
+      const uid = params.get('uid');
 
-        if (uid) {
-          addLog(`UID encontrado: ${uid}. Buscando dados...`);
-          const company = await fetchCompanyById(uid);
-          
-          if (isMounted) {
-            if (company) {
-              addLog("Dados recebidos (pode ser Mock se a API falhou).");
-              setCurrentUser(company);
-              
-              // Se o nome contiver "Modo Demonstração", avisamos que houve erro na API
-              if (company.Name.includes("Modo Demonstração") || company.Name.includes("Erro API")) {
-                 addLog("⚠️ Aviso: API falhou, usando dados de fallback.");
-              }
-            } else {
-              addLog("❌ Nenhum usuário retornado.");
-            }
-          }
-        } else {
-          addLog("Nenhum UID na URL.");
-        }
-      } catch (err: any) {
-        if (isMounted) addLog(`❌ Erro Fatal no useEffect: ${err.message}`);
-      } finally {
+      if (uid && isMounted) {
+        await loadUser(uid);
+      } else {
+        addLog("Nenhum UID na URL. Aguardando input.");
         if (isMounted) setAuthLoading(false);
       }
     };
 
     initSession();
-
     return () => { isMounted = false; };
   }, []);
 
-  const handleLogin = () => {
-    alert("Login deve ser feito via Workly App principal.");
+  const handleManualLogin = () => {
+    if (manualUid) {
+      // Atualiza a URL sem recarregar para facilitar share
+      const newUrl = `${window.location.pathname}?uid=${manualUid}`;
+      window.history.pushState({ path: newUrl }, '', newUrl);
+      loadUser(manualUid);
+    }
   };
 
   if (authLoading) {
@@ -117,24 +127,10 @@ const AppContent: React.FC = () => {
       <div className="flex flex-col h-screen items-center justify-center bg-slate-50 p-4">
         <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-6" />
         <h2 className="text-lg font-semibold text-slate-700 mb-2">Conectando ao Workly...</h2>
-        
-        {/* Debug Console na tela de Loading para ver erros reais */}
-        <div className="w-full max-w-md bg-slate-900 rounded-lg p-4 mt-8 font-mono text-xs text-green-400 h-48 overflow-y-auto shadow-inner border border-slate-700">
-          <div className="flex items-center text-slate-400 mb-2 border-b border-slate-700 pb-1">
-            <Terminal className="w-3 h-3 mr-2" />
-            <span>System Log</span>
-          </div>
-          {debugLog.map((log, i) => (
-            <div key={i} className="mb-1 border-b border-slate-800/50 pb-1 last:border-0">{log}</div>
-          ))}
+        <div className="w-full max-w-md bg-slate-900 rounded-lg p-4 mt-8 font-mono text-xs text-green-400 h-48 overflow-y-auto shadow-inner">
+          <div className="border-b border-slate-700 pb-1 mb-2">System Log</div>
+          {debugLog.map((log, i) => <div key={i} className="mb-1">{log}</div>)}
         </div>
-        
-        <button 
-           onClick={() => setAuthLoading(false)}
-           className="mt-6 text-sm text-slate-400 underline hover:text-slate-600"
-        >
-          Demorando muito? Pular carregamento
-        </button>
       </div>
     );
   }
@@ -148,32 +144,41 @@ const AppContent: React.FC = () => {
           </div>
           <h1 className="text-2xl font-bold text-slate-900 mb-2">Acesso Restrito</h1>
           <p className="text-slate-500 mb-6">
-            Acesse via Workly App.
+            Não identificamos a empresa na URL.
           </p>
 
-           {/* Debug Console Simplificado */}
-          <div className="text-left bg-red-50 p-3 rounded-lg text-xs text-red-800 mb-4 font-mono max-h-32 overflow-auto">
-             <strong>Debug Info:</strong>
-             {debugLog.map((l, i) => <div key={i}>{l}</div>)}
+          <div className="mb-6 text-left">
+            <label className="text-xs font-bold text-slate-500 uppercase">Testar Manualmente (UID)</label>
+            <div className="flex mt-1">
+              <input 
+                type="text" 
+                placeholder="Cole o ID da empresa do Bubble aqui..."
+                className="flex-1 border border-slate-300 rounded-l-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                value={manualUid}
+                onChange={(e) => setManualUid(e.target.value)}
+              />
+              <button 
+                onClick={handleManualLogin}
+                className="bg-blue-600 text-white px-4 py-2 rounded-r-lg hover:bg-blue-700"
+              >
+                <Search className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1">Ex: 1714589... (pegue na URL do Bubble)</p>
           </div>
 
-          <button 
-            onClick={handleLogin}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition-colors mb-4"
-          >
-            Ir para Workly
-          </button>
-          
-          <div className="border-t border-slate-100 pt-4">
-             <button 
-               onClick={() => {
-                 window.location.href = window.location.pathname + "?uid=mock_user";
-               }}
-               className="text-xs text-blue-500 hover:underline"
-             >
-               Entrar Modo Teste (Sem Login)
-             </button>
+           {/* Debug Console */}
+          <div className="text-left bg-slate-900 p-3 rounded-lg text-xs text-green-400 mb-4 font-mono max-h-32 overflow-auto">
+             <div className="font-bold border-b border-slate-700 pb-1 mb-1">Debug Info:</div>
+             {debugLog.map((l, i) => <div key={i}>{l}</div>)}
           </div>
+          
+          <button 
+            onClick={() => loadUser('mock_user')}
+            className="text-xs text-blue-500 hover:underline"
+          >
+            Entrar com Dados Fictícios
+          </button>
         </div>
       </div>
     );

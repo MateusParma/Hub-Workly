@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, User, Lock, CreditCard, Building, Mail, Globe, MapPin, Loader2, ExternalLink, AlertCircle } from 'lucide-react';
+import { Save, User, Lock, CreditCard, Building, Mail, Globe, MapPin, Loader2, ExternalLink, AlertCircle, Image as ImageIcon } from 'lucide-react';
 import { Company } from '../types';
 import { updateCompany } from '../services/bubbleService';
 
@@ -19,7 +19,8 @@ const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
     phone: currentUser.Phone || '',
     website: currentUser.Website || '',
     address: currentUser.Address || '',
-    description: currentUser.Description || ''
+    description: currentUser.Description || '',
+    logo: currentUser.Logo || ''
   });
 
   // Update form if user changes
@@ -30,7 +31,8 @@ const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
       phone: currentUser.Phone || '',
       website: currentUser.Website || '',
       address: currentUser.Address || '',
-      description: currentUser.Description || ''
+      description: currentUser.Description || '',
+      logo: currentUser.Logo || ''
     });
   }, [currentUser]);
 
@@ -49,17 +51,22 @@ const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
         Phone: formData.phone,
         Website: formData.website,
         Address: formData.address,
-        Description: formData.description
+        Description: formData.description,
+        Logo: formData.logo
       });
 
       if (success) {
-        setMessage({ type: 'success', text: 'Dados atualizados com sucesso no Bubble!' });
+        setMessage({ type: 'success', text: 'Dados atualizados! Recarregando página...' });
+        // Recarrega a página para atualizar o Header e Sidebar com o novo Nome/Logo
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
       } else {
-        throw new Error("Falha desconhecida.");
+        throw new Error("O Bubble recusou a edição ou o campo não existe.");
       }
     } catch (error: any) {
       console.error(error);
-      setMessage({ type: 'error', text: 'Erro ao salvar: ' + (error.message || 'Verifique sua conexão.') });
+      setMessage({ type: 'error', text: 'Erro ao salvar: ' + (error.message || 'Verifique se a tabela Empresa permite "Modify via API" nas Privacy Rules.') });
     } finally {
       setLoading(false);
     }
@@ -90,8 +97,8 @@ const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
           <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm text-center">
             <div className="relative inline-block">
                <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-3xl font-bold mx-auto mb-4 border-4 border-white shadow-md overflow-hidden">
-                 {currentUser.Logo ? (
-                    <img src={currentUser.Logo} alt="Logo" className="w-full h-full object-cover" />
+                 {formData.logo ? (
+                    <img src={formData.logo} alt="Logo" className="w-full h-full object-cover" />
                  ) : (
                     formData.companyName.substring(0,2).toUpperCase()
                  )}
@@ -156,6 +163,21 @@ const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
                     className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">URL do Logo (Imagem)</label>
+                <div className="relative">
+                  <ImageIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+                  <input 
+                    type="text" 
+                    value={formData.logo}
+                    onChange={(e) => handleChange('logo', e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg pl-10 pr-3 py-2.5 focus:ring-2 focus:ring-blue-500"
+                    placeholder="https://..."
+                  />
+                </div>
+                <p className="text-xs text-slate-400 mt-1">Cole o link direto de uma imagem (JPG/PNG).</p>
               </div>
               
               <div>

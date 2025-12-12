@@ -91,11 +91,16 @@ const fetchWithFallback = async (targetUrl: string, signal?: AbortSignal, method
   try {
     const response = await fetch(targetUrl, options);
     if (response.ok) {
-        if (method === 'PATCH' || method === 'POST') return true;
+        if (method === 'PATCH' || method === 'POST' || method === 'DELETE') {
+            // Se tiver conteúdo JSON, retorna, senão true
+            const text = await response.text();
+            return text ? JSON.parse(text) : true;
+        }
         return await response.json();
     }
   } catch (e: any) {
     lastError = e;
+    console.warn("Fetch Error:", e);
   }
   
   // Tenta proxy apenas para GET se falhar direto
@@ -113,12 +118,10 @@ const fetchWithFallback = async (targetUrl: string, signal?: AbortSignal, method
 // Helper para buscar em possíveis nomes de tabela (Case Sensitive do Bubble)
 const fetchFromTableVariants = async (id: string, tableBaseName: string, signal?: AbortSignal) => {
     const variants = [tableBaseName, tableBaseName.toLowerCase(), tableBaseName.charAt(0).toUpperCase() + tableBaseName.slice(1).toLowerCase()];
-    // Remove duplicatas
     const uniqueVariants = [...new Set(variants)];
 
     for (const tableName of uniqueVariants) {
         const url = `${BUBBLE_API_ROOT}/${tableName}/${id}`;
-        console.log(`[API] Tentando buscar em ${tableName}...`);
         const result = await fetchWithFallback(url, signal);
         if (result && (result.response || result._id)) return result.response || result;
     }
@@ -154,38 +157,31 @@ export const fetchCompanyById = async (id: string): Promise<Company | null> => {
   let companyData = null;
 
   // 1. TENTATIVA: Buscar como USUÁRIO
-  console.log(`[AUTH] Buscando ID ${id} na tabela User...`);
   const userObj = await fetchFromTableVariants(id, 'User', controller.signal);
 
   if (userObj) {
-      console.log(`[AUTH] Usuário encontrado.`);
       // Verifica se tem link para empresa
       const empresaId = userObj['empresa'] || userObj['Empresa'];
       
       if (empresaId) {
-          console.log(`[AUTH] Link 'empresa' encontrado (${empresaId}). Buscando dados da empresa...`);
           // Se tiver link, busca a empresa vinculada
           const empresaObj = await fetchFromTableVariants(empresaId, 'Empresa', controller.signal);
           if (empresaObj) {
               companyData = empresaObj;
           } else {
-              console.warn(`[AUTH] Link existia mas empresa ${empresaId} não retornou dados. Usando dados do User.`);
               companyData = userObj; // Fallback se o link estiver quebrado
           }
       } else {
-          console.log(`[AUTH] Usuário não tem campo 'empresa' vinculado. Usando o próprio User como empresa (Modo Legado).`);
-          // MODO LEGADO: O próprio User contém os dados (comportamento antigo)
+          // MODO LEGADO: O próprio User contém os dados
           companyData = userObj;
       }
   } 
   else {
-      // 2. TENTATIVA: Buscar direto como EMPRESA (caso o ID passado já seja da empresa)
-      console.log(`[AUTH] ID não encontrado em User. Tentando direto em Empresa...`);
+      // 2. TENTATIVA: Buscar direto como EMPRESA
       companyData = await fetchFromTableVariants(id, 'Empresa', controller.signal);
   }
 
   if (companyData) {
-      // Busca os cupons detalhados se necessário
       companyData = await enrichCoupons(companyData, controller.signal);
       clearTimeout(timeoutId);
       return mapBubbleToCompany(companyData);
@@ -196,19 +192,17 @@ export const fetchCompanyById = async (id: string): Promise<Company | null> => {
       ...MOCK_COMPANIES[0], 
       _id: id, 
       Name: "Erro: Não encontrada", 
-      Description: "Não foi possível localizar este ID nas tabelas 'User' ou 'Empresa'. Verifique as permissões de privacidade no Bubble." 
+      Description: "Não foi possível localizar este ID nas tabelas 'User' ou 'Empresa'." 
   };
 };
 
 export const fetchCompanies = async (): Promise<Company[]> => {
   const controller = new AbortController();
   try {
-      // Tenta buscar na tabela Empresa primeiro
       let url = `${BUBBLE_API_ROOT}/Empresa?t=${Date.now()}`;
       let json = await fetchWithFallback(url, controller.signal);
       
       if (!json || !json.response) {
-         // Fallback para tabela User se Empresa estiver vazia ou proibida
          url = `${BUBBLE_API_ROOT}/User?t=${Date.now()}`;
          json = await fetchWithFallback(url, controller.signal);
       }
@@ -226,25 +220,97 @@ export const updateCompany = async (id: string, data: Partial<Company>): Promise
   if (!id || id === 'mock' || id.includes('Erro')) return false;
 
   const payload: any = {};
-  if (data.Name) payload['Nome da empresa'] = data.Name; // Tenta nome novo
-  if (data.Name) payload['Nome'] = data.Name; // Tenta nome antigo (User)
+  
+  // Mapeamento exato para os campos do Bubble (Case Sensitive)
+  // Baseado no mapBubbleToCompany, estes são os campos mais prováveis
+  if (data.Name) payload['Nome da empresa'] = data.Name;
   if (data.Phone) payload['Contato'] = data.Phone;
   if (data.Website) payload['website'] = data.Website;
   if (data.Address) payload['morada'] = data.Address;
   if (data.Description) payload['Descricao'] = data.Description;
+  
+  // Campo de Logo
+  if (data.Logo) payload['Logo'] = data.Logo;
 
-  // Tenta atualizar onde der (User ou Empresa)
+  console.log("Enviando Update para Empresa:", id, payload);
+
   try {
-      // Tenta Empresa primeiro
       await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${id}`, undefined, 'PATCH', payload);
       return true;
   } catch (e) {
+      console.warn("Falha ao atualizar tabela Empresa, tentando User...");
       try {
-          // Se falhar (ex: 404), tenta User
+          // Fallback para tabela User caso a estrutura seja antiga
+          const userPayload: any = {};
+          if (data.Name) userPayload['Nome'] = data.Name;
+          if (data.Phone) userPayload['Telefone'] = data.Phone;
+          if (data.Logo) userPayload['Img_Perfil'] = data.Logo;
+          // ... outros campos ...
+          
           await fetchWithFallback(`${BUBBLE_API_ROOT}/User/${id}`, undefined, 'PATCH', payload);
           return true;
       } catch (e2) {
           return false;
       }
   }
+};
+
+// --- FUNÇÕES DE CUPOM ---
+
+export const createCoupon = async (companyId: string, couponData: any): Promise<string | null> => {
+    // 1. Cria o Cupom
+    const payload = {
+        codigo: couponData.code,
+        descricao: couponData.description,
+        desconto: couponData.discountValue,
+        max_usos: Number(couponData.maxUses) || 0,
+        validade: couponData.expiryDate,
+        ativo: true,
+        Dono: companyId // Tenta vincular diretamente se o Bubble permitir
+    };
+
+    console.log("Criando cupom...", payload);
+    const result = await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom`, undefined, 'POST', payload);
+    
+    if (result && result.id) {
+        const newCouponId = result.id;
+        
+        // 2. Atualiza a lista da empresa (Isso é crucial no Bubble se não tiver Backend Workflow automático)
+        // Precisamos ler a lista atual primeiro para não sobrescrever? 
+        // A API 'PATCH' do Bubble substitui arrays. O ideal é usar o endpoint específico de lista se existir, 
+        // mas aqui vamos fazer: Ler -> Adicionar -> Salvar
+        try {
+            const company = await fetchCompanyById(companyId);
+            const currentCoupons = company?.Coupons?.map(c => c.id) || [];
+            const newCouponsList = [...currentCoupons, newCouponId];
+            
+            await fetchWithFallback(`${BUBBLE_API_ROOT}/Empresa/${companyId}`, undefined, 'PATCH', {
+                "Lista_cupons": newCouponsList
+            });
+        } catch (err) {
+            console.warn("Cupom criado, mas falha ao vincular na lista da empresa. Verifique se o campo 'Dono' resolveu.", err);
+        }
+        
+        return newCouponId;
+    }
+    return null;
+};
+
+export const updateCoupon = async (couponId: string, couponData: any): Promise<boolean> => {
+    const payload: any = {};
+    if (couponData.code) payload.codigo = couponData.code;
+    if (couponData.description) payload.descricao = couponData.description;
+    if (couponData.discountValue) payload.desconto = couponData.discountValue;
+    if (couponData.maxUses) payload.max_usos = Number(couponData.maxUses);
+    if (couponData.expiryDate) payload.validade = couponData.expiryDate;
+    if (couponData.status) payload.ativo = (couponData.status === 'active');
+
+    const result = await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom/${couponId}`, undefined, 'PATCH', payload);
+    return !!result;
+};
+
+export const deleteCoupon = async (couponId: string): Promise<boolean> => {
+    // No Bubble, geralmente deletamos o objeto
+    const result = await fetchWithFallback(`${BUBBLE_API_ROOT}/Cupom/${couponId}`, undefined, 'DELETE');
+    return !!result;
 };

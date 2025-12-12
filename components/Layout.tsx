@@ -1,5 +1,5 @@
-import React from 'react';
-import { LayoutDashboard, Users, Ticket, Settings, Menu, X, Crown, LogOut } from 'lucide-react';
+import React, { useState } from 'react';
+import { LayoutDashboard, Users, Ticket, Settings, Menu, X, Crown, LogOut, Terminal, Activity } from 'lucide-react';
 import { Company } from '../types';
 
 interface LayoutProps {
@@ -9,10 +9,12 @@ interface LayoutProps {
   currentView: string;
   onChangeView: (view: string) => void;
   currentUser: Company;
+  debugLogs?: string[]; // Propriedade opcional para logs
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, userIsPro, onTogglePro, currentView, onChangeView, currentUser }) => {
+const Layout: React.FC<LayoutProps> = ({ children, userIsPro, onTogglePro, currentView, onChangeView, currentUser, debugLogs = [] }) => {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
+  const [isDebugOpen, setIsDebugOpen] = useState(false);
 
   const NavItem = ({ icon: Icon, label, viewId }: { icon: any, label: string, viewId: string }) => {
     const active = currentView === viewId;
@@ -103,7 +105,7 @@ const Layout: React.FC<LayoutProps> = ({ children, userIsPro, onTogglePro, curre
       </aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden relative">
         {/* Header */}
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 lg:px-8">
           <button 
@@ -140,11 +142,47 @@ const Layout: React.FC<LayoutProps> = ({ children, userIsPro, onTogglePro, curre
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto p-4 lg:p-8 bg-slate-50/50">
+        <main className="flex-1 overflow-y-auto p-4 lg:p-8 bg-slate-50/50 pb-12">
           <div className="max-w-7xl mx-auto animate-fadeIn">
             {children}
           </div>
         </main>
+
+        {/* Debug Footer */}
+        <div className="bg-slate-900 text-slate-400 text-xs py-1 px-4 flex justify-between items-center border-t border-slate-700 absolute bottom-0 w-full z-10">
+          <div className="flex items-center space-x-4">
+            <span className="flex items-center">
+               <Activity className="w-3 h-3 mr-1 text-green-500" />
+               Status: Online
+            </span>
+            <span className="hidden sm:inline">UID: {currentUser._id}</span>
+            <span className="hidden sm:inline">Env: {window.location.hostname}</span>
+          </div>
+          <button 
+             onClick={() => setIsDebugOpen(!isDebugOpen)}
+             className="hover:text-white flex items-center bg-slate-800 px-2 py-0.5 rounded"
+          >
+            <Terminal className="w-3 h-3 mr-1" />
+            {isDebugOpen ? 'Fechar Logs' : 'Debug'}
+          </button>
+        </div>
+
+        {/* Debug Console Overlay */}
+        {isDebugOpen && (
+          <div className="absolute bottom-8 left-0 right-0 bg-slate-900/95 border-t border-slate-700 h-64 overflow-y-auto p-4 z-20 text-xs font-mono text-green-400 shadow-xl backdrop-blur-sm">
+             <div className="flex justify-between items-center border-b border-slate-700 pb-2 mb-2">
+               <strong className="text-white">System Logs</strong>
+               <button onClick={() => setIsDebugOpen(false)} className="text-slate-400 hover:text-white"><X className="w-4 h-4"/></button>
+             </div>
+             {debugLogs.length === 0 ? (
+               <div className="text-slate-500 italic">Nenhum log registrado.</div>
+             ) : (
+               debugLogs.map((log, i) => (
+                 <div key={i} className="mb-1 border-b border-slate-800/50 pb-0.5">{log}</div>
+               ))
+             )}
+          </div>
+        )}
       </div>
     </div>
   );

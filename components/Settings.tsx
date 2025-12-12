@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, User, Lock, CreditCard, Building, Mail, Globe, MapPin, Loader2 } from 'lucide-react';
+import { Save, User, Lock, CreditCard, Building, Mail, Globe, MapPin, Loader2, ExternalLink } from 'lucide-react';
 import { Company } from '../types';
 
 interface SettingsProps {
@@ -44,6 +44,10 @@ const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
     }, 1500);
   };
 
+  const handleOpenWorkly = () => {
+    window.open('https://www.workly.pt', '_blank');
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-10 animate-fadeIn">
       <div>
@@ -85,8 +89,11 @@ const Settings: React.FC<SettingsProps> = ({ currentUser }) => {
              </div>
              <div className="text-2xl font-bold mb-1">PRO Business</div>
              <p className="text-slate-400 text-sm mb-4">Gerenciado via Workly App</p>
-             <button disabled className="w-full py-2 bg-white/10 rounded-lg text-sm font-medium border border-white/10 opacity-70 cursor-not-allowed">
-               Gerenciar Assinatura
+             <button 
+               onClick={handleOpenWorkly}
+               className="w-full py-2 bg-white text-slate-900 hover:bg-slate-100 rounded-lg text-sm font-bold transition-colors flex items-center justify-center"
+             >
+               Gerenciar Assinatura <ExternalLink className="w-3 h-3 ml-2" />
              </button>
           </div>
         </div>

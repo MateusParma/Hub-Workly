@@ -1,4 +1,4 @@
-import React, { useState, useEffect, ReactNode, ErrorInfo } from 'react';
+import React, { useState, useEffect, ReactNode, ErrorInfo, Component } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import PartnerDirectory from './components/PartnerDirectory';
@@ -17,7 +17,7 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = {
     hasError: false,
     error: null
@@ -79,9 +79,10 @@ const AppContent: React.FC = () => {
       if (company) {
         setCurrentUser(company);
         if (company.Name.includes("Erro")) {
-          addLog("⚠️ Dados retornaram com erro.");
+          addLog(`⚠️ Dados retornaram com erro: ${company.Description}`);
         } else {
           addLog("✅ Dados carregados com sucesso!");
+          addLog(`Nome: ${company.Name}`);
         }
       } else {
         addLog("❌ Nenhum dado encontrado.");
@@ -206,6 +207,7 @@ const AppContent: React.FC = () => {
       currentView={currentView}
       onChangeView={setCurrentView}
       currentUser={currentUser}
+      debugLogs={debugLog}
     >
       {renderView()}
     </Layout>

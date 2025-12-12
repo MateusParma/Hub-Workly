@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { TrendingUp, PiggyBank, Ticket, ArrowUpRight, Users, Loader2, Building, ShoppingBag, Calendar } from 'lucide-react';
+import { TrendingUp, PiggyBank, Ticket, ArrowUpRight, Users, Loader2, Building, ShoppingBag, Calendar, CheckCircle, Globe } from 'lucide-react';
 import { fetchDashboardStats, fetchMyRedemptions } from '../services/bubbleService';
 import { DashboardStats, Company, Redemption } from '../types';
 
@@ -15,11 +15,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser }) => {
 
   // Calcula estatísticas pessoais dinâmicas
   const myTotalCoupons = currentUser?.Coupons?.length || 0;
-  // Soma total de utilizadores de todos os cupons do usuário atual
-  const myTotalRedemptions = currentUser?.Coupons?.reduce((acc, coupon) => {
-      return acc + (coupon.utilizadores?.length || 0);
-  }, 0) || 0;
-
+  
   useEffect(() => {
     const loadStats = async () => {
       setLoading(true);
@@ -59,69 +55,71 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser }) => {
     <div className="space-y-6 animate-fadeIn">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Dashboard em Tempo Real</h1>
-        <p className="text-slate-500">Visão geral do ecossistema de parceiros e desempenho dos seus benefícios.</p>
+        <p className="text-slate-500">Visão geral do ecossistema Workly e desempenho dos seus benefícios.</p>
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Card 1: Parceiros Globais */}
+        
+        {/* Card 1: Parceiros Globais (Rede Completa) */}
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-            <Users className="w-24 h-24 text-indigo-600" />
+            <Globe className="w-24 h-24 text-indigo-600" />
           </div>
           <div className="relative z-10">
             <div className="flex items-center mb-4">
               <div className="p-2 bg-indigo-100 rounded-lg">
                 <Users className="w-6 h-6 text-indigo-600" />
               </div>
-              <span className="ml-3 text-sm font-medium text-slate-500">Rede de Parceiros</span>
+              <span className="ml-3 text-sm font-bold text-slate-500 uppercase tracking-wider">Rede de Parceiros</span>
             </div>
-            <h3 className="text-3xl font-bold text-slate-900">{displayStats.totalPartners}</h3>
+            <h3 className="text-4xl font-black text-slate-900">{displayStats.totalPartners}</h3>
             <div className="flex items-center mt-2 text-sm text-indigo-600">
-               <span className="font-medium text-slate-400">Empresas no Hub</span>
+               <span className="font-medium text-slate-500">Total de empresas na Workly</span>
             </div>
           </div>
         </div>
 
-        {/* Card 2: Minhas Ofertas Ativas */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
-          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-            <Ticket className="w-24 h-24 text-blue-600" />
-          </div>
-          <div className="relative z-10">
-            <div className="flex items-center mb-4">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Ticket className="w-6 h-6 text-blue-600" />
-              </div>
-              <span className="ml-3 text-sm font-medium text-slate-500">Suas Ofertas</span>
-            </div>
-            <h3 className="text-3xl font-bold text-slate-900">{myTotalCoupons}</h3>
-            <div className="flex items-center mt-2 text-sm text-blue-600">
-              <span className="text-slate-400">Cupons criados por você</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Card 3: Meus Resgates (DINÂMICO) */}
+        {/* Card 2: Total de Resgates (GLOBAL - Dinâmico) */}
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-            <PiggyBank className="w-24 h-24 text-emerald-600" />
+            <CheckCircle className="w-24 h-24 text-emerald-600" />
           </div>
           <div className="relative z-10">
             <div className="flex items-center mb-4">
               <div className="p-2 bg-emerald-100 rounded-lg">
-                <PiggyBank className="w-6 h-6 text-emerald-600" />
+                <TrendingUp className="w-6 h-6 text-emerald-600" />
               </div>
-              <span className="ml-3 text-sm font-medium text-slate-500">Total de Usos</span>
+              <span className="ml-3 text-sm font-bold text-slate-500 uppercase tracking-wider">Movimento do Hub</span>
             </div>
-            {/* VALOR DINÂMICO AQUI */}
-            <h3 className="text-3xl font-bold text-slate-900">{myTotalRedemptions}</h3>
+            {/* SOMA TOTAL DE RESGATES DA PLATAFORMA */}
+            <h3 className="text-4xl font-black text-slate-900">{displayStats.totalRedemptions}</h3>
             <div className="flex items-center mt-2 text-sm text-emerald-600">
               <ArrowUpRight className="w-4 h-4 mr-1" />
-              <span className="font-medium">Clientes que usaram seus cupons</span>
+              <span className="font-medium">Cupons resgatados na plataforma</span>
             </div>
           </div>
         </div>
+
+        {/* Card 3: Minhas Ofertas (Pessoal) */}
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
+          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+            <Ticket className="w-24 h-24 text-orange-600" />
+          </div>
+          <div className="relative z-10">
+            <div className="flex items-center mb-4">
+              <div className="p-2 bg-orange-100 rounded-lg">
+                <Ticket className="w-6 h-6 text-orange-600" />
+              </div>
+              <span className="ml-3 text-sm font-bold text-slate-500 uppercase tracking-wider">Suas Ofertas</span>
+            </div>
+            <h3 className="text-4xl font-black text-slate-900">{myTotalCoupons}</h3>
+            <div className="flex items-center mt-2 text-sm text-orange-600">
+              <span className="text-slate-500">Cupons ativos criados por você</span>
+            </div>
+          </div>
+        </div>
+
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -130,7 +128,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser }) => {
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex flex-col h-[400px]">
           <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center">
             <ShoppingBag className="w-5 h-5 mr-2 text-blue-600" />
-            Últimos Resgates (Seus Clientes)
+            Últimos Clientes (Seus Cupons)
           </h2>
           <div className="space-y-4 flex-1 overflow-y-auto pr-2 custom-scrollbar">
             {myRedemptions.length > 0 ? (
